@@ -1,0 +1,70 @@
+services:
+  - type: web
+    name: kalshi-research-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kalshi-research-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: prod
+      - key: CORS_ORIGINS
+        value: https://kalshi-research-ui.onrender.com
+      - key: KALSHI_SERIES_PREFIXES
+        value: KXMLBGAME
+      - key: POLLING_LEAGUES
+        value: mlb
+      - key: POLLING_MARKETS
+        value: Moneyline
+      - key: SHARP_BOOKS
+        value: Pinnacle,Circa Sports,BetOnline,Betcris
+      - key: KALSHI_API_KEY
+        sync: false
+      - key: KALSHI_PRIVATE_KEY
+        sync: false
+      - key: ODDSJAM_API_KEY
+        sync: false
+
+  - type: worker
+    name: kalshi-research-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: python -m app.worker run
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kalshi-research-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: prod
+      - key: KALSHI_SERIES_PREFIXES
+        value: KXMLBGAME
+      - key: POLLING_LEAGUES
+        value: mlb
+      - key: POLLING_MARKETS
+        value: Moneyline
+      - key: SHARP_BOOKS
+        value: Pinnacle,Circa Sports,BetOnline,Betcris
+      - key: KALSHI_API_KEY
+        sync: false
+      - key: KALSHI_PRIVATE_KEY
+        sync: false
+      - key: ODDSJAM_API_KEY
+        sync: false
+
+  - type: web
+    name: kalshi-research-ui
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://kalshi-research-api.onrender.com
+
+databases:
+  - name: kalshi-research-db
+    databaseName: kalshi_research
+    user: kalshi_research

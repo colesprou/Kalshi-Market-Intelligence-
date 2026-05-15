@@ -1,0 +1,12 @@
+.DS_Store
+.env
+*.pem
+.venv/
+__pycache__/
+*.pyc
+local.db
+*.sqlite
+*.sqlite3
+
+frontend/node_modules/
+frontend/dist/
