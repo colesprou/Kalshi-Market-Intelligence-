@@ -31,7 +31,7 @@ services:
   - type: worker
     name: kalshi-research-worker
     runtime: python
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    buildCommand: pip install -r requirements.txt
     startCommand: python -m app.worker run
     envVars:
       - key: DATABASE_URL
