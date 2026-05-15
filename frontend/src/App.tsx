@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -17,6 +17,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   LineChart as ReLineChart,
@@ -29,6 +30,11 @@ import { api, DerivedMetric, Market, Opportunity, OrderbookSnapshot, SharpBookLi
 
 type OpportunityKind = "all" | "stale" | "market-making" | "queue-positioning";
 type SideMode = "yes" | "no";
+type DepthLadderDatum = {
+  price: string;
+  priceCents: number;
+  depth: number;
+};
 
 const opportunityTabs: { id: OpportunityKind; label: string }[] = [
   { id: "all", label: "All" },
@@ -362,8 +368,17 @@ function MarketDetail({
   sideMode: SideMode;
   loading: boolean;
 }) {
+  const [selectedDepthPrice, setSelectedDepthPrice] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSelectedDepthPrice(null);
+  }, [market?.ticker, sideMode]);
+
   if (!market) return <EmptyState title="Select a market" detail="Market details will appear once discovery finds active tickers." />;
-  const priceChartData = buildPriceChartData(metrics, orderbooks, sideMode);
+
+  const trackedDepthLabel =
+    selectedDepthPrice === null ? `${sideMode.toUpperCase()} best bid depth` : `${sideMode.toUpperCase()} ${selectedDepthPrice}c depth`;
+  const priceChartData = buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice);
   const sharpChartData = buildSharpOddsChartData(sharpOdds);
   const limitChartData = buildLimitChartData(limits);
   const fairPrice = sideFairPrice(metric, sideMode);
@@ -398,7 +413,12 @@ function MarketDetail({
           </div>
         </div>
         {orderbook ? (
-          <DepthLadderChart orderbook={orderbook} sideMode={sideMode} />
+          <DepthLadderChart
+            orderbook={orderbook}
+            sideMode={sideMode}
+            selectedPrice={selectedDepthPrice}
+            onSelectPrice={setSelectedDepthPrice}
+          />
         ) : (
           <EmptyState title="No depth snapshot" detail="Depth bars will appear after the next orderbook poll." />
         )}
@@ -407,9 +427,14 @@ function MarketDetail({
       <div className="chart-panel">
         <div className="panel-heading">
           <div>
-            <h2>Kalshi Price, Fair, Depth</h2>
-            <p>{loading ? "Loading series" : `${priceChartData.length} points`}</p>
+            <h2>Kalshi Price, Fair, Queue Liquidity</h2>
+            <p>{loading ? "Loading series" : `${priceChartData.length} points · ${trackedDepthLabel}`}</p>
           </div>
+          {selectedDepthPrice !== null ? (
+            <button className="text-button" onClick={() => setSelectedDepthPrice(null)}>
+              Track best bid
+            </button>
+          ) : null}
         </div>
         {priceChartData.length ? (
           <ResponsiveContainer width="100%" height={260}>
@@ -419,9 +444,17 @@ function MarketDetail({
               <YAxis yAxisId="price" domain={[0, 100]} />
               <YAxis yAxisId="depth" orientation="right" tickFormatter={(value) => compactNumber(Number(value))} />
               <Tooltip />
-              <Bar yAxisId="depth" dataKey="depth" fill="#c9ddd6" radius={[3, 3, 0, 0]} />
-              <Line yAxisId="price" type="monotone" dataKey="bestYesBid" stroke="#1f7a5b" dot={false} strokeWidth={2} />
-              <Line yAxisId="price" type="monotone" dataKey="fair" stroke="#854d0e" dot={false} strokeWidth={2} />
+              <Bar yAxisId="depth" dataKey="queueDepth" name={trackedDepthLabel} fill="#c9ddd6" radius={[3, 3, 0, 0]} />
+              <Line
+                yAxisId="price"
+                type="monotone"
+                dataKey="bestBid"
+                name={`${sideMode.toUpperCase()} best bid`}
+                stroke="#1f7a5b"
+                dot={false}
+                strokeWidth={2}
+              />
+              <Line yAxisId="price" type="monotone" dataKey="fair" name={`${sideMode.toUpperCase()} fair`} stroke="#854d0e" dot={false} strokeWidth={2} />
             </ComposedChart>
           </ResponsiveContainer>
         ) : (
@@ -485,7 +518,17 @@ function LimitChart({ data }: { data: Record<string, string | number | null>[] }
   );
 }
 
-function DepthLadderChart({ orderbook, sideMode }: { orderbook: OrderbookSnapshot; sideMode: SideMode }) {
+function DepthLadderChart({
+  orderbook,
+  sideMode,
+  selectedPrice,
+  onSelectPrice
+}: {
+  orderbook: OrderbookSnapshot;
+  sideMode: SideMode;
+  selectedPrice: number | null;
+  onSelectPrice: (price: number) => void;
+}) {
   const data = buildDepthLadderData(orderbook, sideMode);
   if (!data.length) {
     return <EmptyState title="No displayed depth" detail="This side has no visible bid ladder in the latest snapshot." />;
@@ -498,7 +541,18 @@ function DepthLadderChart({ orderbook, sideMode }: { orderbook: OrderbookSnapsho
         <XAxis type="number" tickFormatter={(value) => compactNumber(Number(value))} />
         <YAxis type="category" dataKey="price" width={58} />
         <Tooltip formatter={(value) => formatInteger(Number(value))} labelFormatter={(label) => `${sideMode.toUpperCase()} ${label}`} />
-        <Bar dataKey="depth" fill="#1f7a5b" radius={[0, 4, 4, 0]} />
+        <Bar
+          dataKey="depth"
+          radius={[0, 4, 4, 0]}
+          onClick={(entry: unknown) => {
+            const row = entry as DepthLadderDatum;
+            if (Number.isFinite(row.priceCents)) onSelectPrice(row.priceCents);
+          }}
+        >
+          {data.map((row) => (
+            <Cell key={row.priceCents} fill={selectedPrice === row.priceCents ? "#854d0e" : "#1f7a5b"} cursor="pointer" />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
@@ -546,7 +600,12 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function buildPriceChartData(metrics: DerivedMetric[], orderbooks: OrderbookSnapshot[], sideMode: SideMode) {
+function buildPriceChartData(
+  metrics: DerivedMetric[],
+  orderbooks: OrderbookSnapshot[],
+  sideMode: SideMode,
+  selectedDepthPrice: number | null
+) {
   const metricByMinute = new Map<string, DerivedMetric>();
   for (const metric of metrics) {
     metricByMinute.set(metric.timestamp.slice(0, 16), metric);
@@ -556,11 +615,13 @@ function buildPriceChartData(metrics: DerivedMetric[], orderbooks: OrderbookSnap
     .map((orderbook) => {
       const metric = metricByMinute.get(orderbook.timestamp.slice(0, 16));
       const fair = sideFairPrice(metric ?? null, sideMode);
+      const bestBid = sideBestBid(orderbook, sideMode);
+      const queuePrice = selectedDepthPrice ?? bestBid;
       return {
         time: new Date(orderbook.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        bestYesBid: sideMode === "no" ? orderbook.best_no_bid : orderbook.best_yes_bid,
+        bestBid,
         fair,
-        depth: orderbook.total_depth
+        queueDepth: depthAtPrice(orderbook, sideMode, queuePrice)
       };
     })
     .slice(-80);
@@ -598,7 +659,7 @@ function buildLimitChartData(limits: SharpBookLimit[]) {
 
 function buildDepthLadderData(orderbook: OrderbookSnapshot, sideMode: SideMode) {
   const book = sideMode === "no" ? orderbook.no_book : orderbook.yes_book;
-  const bestBid = sideMode === "no" ? orderbook.best_no_bid : orderbook.best_yes_bid;
+  const bestBid = sideBestBid(orderbook, sideMode);
   if (!book || bestBid === null || bestBid === undefined) return [];
 
   return Object.entries(book)
@@ -608,8 +669,19 @@ function buildDepthLadderData(orderbook: OrderbookSnapshot, sideMode: SideMode) 
     .slice(0, 12)
     .map((row) => ({
       price: row.priceCents === bestBid ? `${row.priceCents}c best` : `${row.priceCents}c`,
+      priceCents: row.priceCents,
       depth: row.depth
     }));
+}
+
+function sideBestBid(orderbook: OrderbookSnapshot, sideMode: SideMode) {
+  return sideMode === "no" ? orderbook.best_no_bid : orderbook.best_yes_bid;
+}
+
+function depthAtPrice(orderbook: OrderbookSnapshot, sideMode: SideMode, price: number | null | undefined) {
+  if (price === null || price === undefined) return 0;
+  const book = sideMode === "no" ? orderbook.no_book : orderbook.yes_book;
+  return book?.[String(price)] ?? 0;
 }
 
 function bestOpportunityScore(opportunity?: Opportunity) {
