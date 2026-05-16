@@ -34,8 +34,11 @@ class Settings(BaseSettings):
     cleanup_interval_seconds: int = Field(default=86400, alias="CLEANUP_INTERVAL_SECONDS")
 
     polling_leagues_csv: str = Field(default="mlb", alias="POLLING_LEAGUES")
-    polling_markets_csv: str = Field(default="Moneyline", alias="POLLING_MARKETS")
-    kalshi_series_prefixes_csv: str = Field(default="KXMLBGAME", alias="KALSHI_SERIES_PREFIXES")
+    polling_markets_csv: str = Field(default="Moneyline,Run Line,Total Runs,1st Half Total Runs", alias="POLLING_MARKETS")
+    kalshi_series_prefixes_csv: str = Field(
+        default="KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL",
+        alias="KALSHI_SERIES_PREFIXES",
+    )
     sharp_books_csv: str = Field(default="Pinnacle,Circa Sports,BetOnline,Betcris", alias="SHARP_BOOKS")
 
     @field_validator("database_url")

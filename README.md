@@ -58,9 +58,9 @@ DATABASE_URL=sqlite:///./local.db
 KALSHI_API_KEY=
 KALSHI_PRIVATE_KEY=
 ODDSJAM_API_KEY=
-KALSHI_SERIES_PREFIXES=KXMLBGAME
+KALSHI_SERIES_PREFIXES=KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL
 POLLING_LEAGUES=mlb
-POLLING_MARKETS=Moneyline
+POLLING_MARKETS=Moneyline,Run Line,Total Runs,1st Half Total Runs
 SHARP_BOOKS=Pinnacle,Circa,BetOnline
 CORS_ORIGINS=http://localhost:5173
 ```
@@ -153,13 +153,18 @@ dataset.
 
 ## Current Scope And Assumptions
 
-- The default research configuration focuses on MLB moneyline markets with the
-  `KXMLBGAME` Kalshi series prefix.
+- The default research configuration focuses on main MLB moneyline, run line,
+  game total, and first-five total markets.
+- MLB Kalshi series defaults are `KXMLBGAME`, `KXMLBSPREAD`, `KXMLBTOTAL`,
+  and `KXMLBF5TOTAL`.
+- MLB Optic Odds market defaults are `Moneyline`, `Run Line`, `Total Runs`,
+  and `1st Half Total Runs` with `is_main=true`.
 - Kalshi YES and NO markets are separate binary markets with separate orderbooks.
 - Kalshi exposes bids on each side; asks are derived from the opposite side bid
   where applicable.
-- Moneyline ticker suffixes are used to map the YES team and infer the opposing
-  NO side for research views.
+- Moneyline and run-line ticker suffixes are used to map the YES team where
+  available. Total markets are treated as YES=over threshold and NO=under
+  threshold in research views.
 - Multiplicative devigging is implemented first; Shin, probit, logit, and
   weighted consensus models can be added later.
 - Opportunity scores are heuristic research triage signals, not automated

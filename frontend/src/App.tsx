@@ -738,7 +738,21 @@ function marketSelection(market: Market) {
 }
 
 function marketSideLabel(market: Market, sideMode: SideMode) {
-  return `${sideMode.toUpperCase()} ${marketSelection(market)}`;
+  const marketType = market.market_type ?? "";
+  const selection = marketSelection(market);
+  if (marketType.includes("TOTAL") || marketType === "Total Runs" || marketType === "1st Half Total Runs") {
+    return sideMode === "yes" ? `YES over ${selection}` : `NO under ${selection}`;
+  }
+  if (marketType.includes("SPREAD") || marketType === "Run Line") {
+    return `${sideMode.toUpperCase()} ${formatRunLineSelection(selection)}`;
+  }
+  return `${sideMode.toUpperCase()} ${selection}`;
+}
+
+function formatRunLineSelection(selection: string) {
+  const match = selection.match(/^([A-Z]+)(\d+)$/);
+  if (!match) return selection;
+  return `${match[1]} by ${match[2]}+`;
 }
 
 function sideFairPrice(metric: DerivedMetric | null | undefined, sideMode: SideMode) {

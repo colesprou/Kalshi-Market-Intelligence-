@@ -14,11 +14,11 @@ services:
       - key: CORS_ORIGINS
         value: https://kalshi-research-ui.onrender.com
       - key: KALSHI_SERIES_PREFIXES
-        value: KXMLBGAME
+        value: KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL
       - key: POLLING_LEAGUES
         value: mlb
       - key: POLLING_MARKETS
-        value: Moneyline
+        value: Moneyline,Run Line,Total Runs,1st Half Total Runs
       - key: SHARP_BOOKS
         value: Pinnacle,Circa Sports,BetOnline,Betcris
       - key: KALSHI_API_KEY
@@ -41,11 +41,11 @@ services:
       - key: ENVIRONMENT
         value: prod
       - key: KALSHI_SERIES_PREFIXES
-        value: KXMLBGAME
+        value: KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL
       - key: POLLING_LEAGUES
         value: mlb
       - key: POLLING_MARKETS
-        value: Moneyline
+        value: Moneyline,Run Line,Total Runs,1st Half Total Runs
       - key: SHARP_BOOKS
         value: Pinnacle,Circa Sports,BetOnline,Betcris
       - key: KALSHI_API_KEY
