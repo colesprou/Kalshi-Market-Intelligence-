@@ -62,6 +62,8 @@ services:
         value: 300
       - key: FEATURE_BUCKET_INTERVAL_SECONDS
         value: 60
+      - key: FEATURE_BUCKET_LOOKBACK_MINUTES
+        value: 3
       - key: EVENT_DETECTION_INTERVAL_SECONDS
         value: 60
       - key: KALSHI_PRIVATE_DATA_ENABLED

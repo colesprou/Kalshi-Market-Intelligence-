@@ -497,6 +497,9 @@ function MarketDetail({
   const timeWindowLabel = timeWindows.find((window) => window.id === timeWindow)?.label ?? "1h";
   const priceChartData = filterTimeWindow(buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice), timeWindow);
   const volumeChartData = filterTimeWindow(buildVolumeChartData(metrics, orderbooks, features, sideMode), timeWindow);
+  const hasVolumeData = volumeChartData.some(
+    (row) => Number(row.intervalVolume) > 0 || Number(row.contractsPerMinute) > 0
+  );
   const sharpChartData = filterTimeWindow(buildSharpOddsChartData(sharpOdds), timeWindow);
   const limitChartData = filterTimeWindow(buildLimitChartData(limits), timeWindow);
   const fairPrice = sideFairPrice(metric, sideMode);
@@ -584,7 +587,7 @@ function MarketDetail({
         ) : (
           <EmptyState title="No time series yet" detail="Orderbook and metric snapshots will chart here after ingestion starts." />
         )}
-        {volumeChartData.length ? (
+        {volumeChartData.length && hasVolumeData ? (
           <div className="volume-strip">
             <div className="volume-heading">
               <strong>Volume and Contracts/Min</strong>
@@ -628,6 +631,8 @@ function MarketDetail({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+        ) : volumeChartData.length ? (
+          <EmptyState title="No volume in this window" detail="Trades are being tracked, but this market has no contracts in the selected time range." />
         ) : null}
       </div>
 

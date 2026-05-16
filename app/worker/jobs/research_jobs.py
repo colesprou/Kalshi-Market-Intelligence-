@@ -601,7 +601,11 @@ def calculate_market_feature_buckets_job() -> None:
 
 
 def calculate_market_feature_buckets(db: Session) -> int:
-    return build_recent_feature_buckets(db, MarketRepository(db).active_for_polling())
+    return build_recent_feature_buckets(
+        db,
+        MarketRepository(db).active_for_polling(),
+        lookback_minutes=settings.feature_bucket_lookback_minutes,
+    )
 
 
 def detect_market_events_job() -> None:

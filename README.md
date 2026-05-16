@@ -69,6 +69,7 @@ FAST_POLL_ENABLED=false
 FAST_POLL_INTERVAL_SECONDS=5
 FAST_POLL_MARKET_LIMIT=20
 FAST_POLL_WINDOW_MINUTES=15
+FEATURE_BUCKET_LOOKBACK_MINUTES=3
 ```
 
 Polling intervals and feature flags are also environment-driven. See

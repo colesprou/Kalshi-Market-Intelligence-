@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     kalshi_trades_interval_seconds: int = Field(default=60, alias="KALSHI_TRADES_INTERVAL_SECONDS")
     private_fills_interval_seconds: int = Field(default=300, alias="PRIVATE_FILLS_INTERVAL_SECONDS")
     feature_bucket_interval_seconds: int = Field(default=60, alias="FEATURE_BUCKET_INTERVAL_SECONDS")
+    feature_bucket_lookback_minutes: int = Field(default=3, alias="FEATURE_BUCKET_LOOKBACK_MINUTES")
     event_detection_interval_seconds: int = Field(default=60, alias="EVENT_DETECTION_INTERVAL_SECONDS")
     cleanup_interval_seconds: int = Field(default=86400, alias="CLEANUP_INTERVAL_SECONDS")
     kalshi_private_data_enabled: bool = Field(default=False, alias="KALSHI_PRIVATE_DATA_ENABLED")

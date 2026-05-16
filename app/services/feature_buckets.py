@@ -33,12 +33,27 @@ def floor_minute(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(second=0, microsecond=0)
 
 
-def build_recent_feature_buckets(db: Session, markets: list[Market], now: datetime | None = None) -> int:
+def build_recent_feature_buckets(
+    db: Session,
+    markets: list[Market],
+    now: datetime | None = None,
+    lookback_minutes: int = 10,
+) -> int:
     current = floor_minute(now or datetime.now(timezone.utc))
     rows = 0
-    for market in markets:
-        if upsert_feature_bucket(db, market, BucketWindow(start=current, end=current + timedelta(seconds=BUCKET_SECONDS))):
-            rows += 1
+    lookback = max(0, lookback_minutes)
+    bucket_starts = [
+        current - timedelta(minutes=minutes_back)
+        for minutes_back in range(lookback, -1, -1)
+    ]
+    for bucket_start in bucket_starts:
+        for market in markets:
+            if upsert_feature_bucket(
+                db,
+                market,
+                BucketWindow(start=bucket_start, end=bucket_start + timedelta(seconds=BUCKET_SECONDS)),
+            ):
+                rows += 1
     db.commit()
     return rows
 
