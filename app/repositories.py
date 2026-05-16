@@ -60,7 +60,7 @@ class MarketRepository:
         market.raw_payload = raw_payload or market.raw_payload
         return market
 
-    def active_for_polling(self, limit: int = 200) -> list[Market]:
+    def active_for_polling(self, limit: int = 1000) -> list[Market]:
         stmt = (
             select(Market)
             .where(Market.status.in_(["open", "active", "unplayed", "live"]))

@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.clients.kalshi import KalshiClient, dollars_to_cents
+from app.clients.kalshi import KalshiClient, dollars_to_cents, quantity_to_int
 from app.clients.optic_odds import OpticOddsClient
 from app.config import settings
 from app.db import SessionLocal
@@ -209,7 +209,7 @@ async def pull_kalshi_orderbooks(db: Session) -> int:
             continue
 
         market_data = market_payload.get("market", {})
-        volume = market_data.get("volume")
+        volume = market_volume(market_data)
         recent = snapshots.orderbooks_since(market.id, now - timedelta(minutes=10))
         cpm = contracts_per_minute(recent) if recent else None
         best_yes_ask_qty = orderbook.no.get(orderbook.best_no_bid or -1, 0)
@@ -228,7 +228,7 @@ async def pull_kalshi_orderbooks(db: Session) -> int:
             total_depth=sum(orderbook.yes.values()) + sum(orderbook.no.values()),
             spread=calculate_spread(orderbook.best_yes_bid, orderbook.best_yes_ask),
             contracts_per_minute=cpm,
-            volume=int(volume) if volume is not None else None,
+            volume=volume,
             yes_book={str(price): qty for price, qty in orderbook.yes.items()},
             no_book={str(price): qty for price, qty in orderbook.no.items()},
         )
@@ -374,6 +374,14 @@ def _iter_odds(payload: dict[str, Any]) -> list[dict[str, Any]]:
     for fixture in payload.get("data", []):
         rows.extend(fixture.get("odds", []))
     return rows
+
+
+def market_volume(market_data: dict[str, Any]) -> int | None:
+    for key in ("volume", "volume_fp", "volume_24h", "volume_24h_fp"):
+        value = market_data.get(key)
+        if value is not None:
+            return quantity_to_int(value)
+    return None
 
 
 def _normalize_side(odds: dict[str, Any], target_team: str | None = None) -> str:

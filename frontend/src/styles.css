@@ -190,9 +190,13 @@ h2 {
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 150px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 14px;
+}
+
+.market-search {
+  grid-column: 1 / -1;
 }
 
 .side-toggle,

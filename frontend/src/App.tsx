@@ -67,6 +67,8 @@ export function App() {
   const [kind, setKind] = useState<OpportunityKind>("all");
   const [sideMode, setSideMode] = useState<SideMode>("no");
   const [marketScope, setMarketScope] = useState<MarketScope>("upcoming");
+  const [leagueFilter, setLeagueFilter] = useState("all");
+  const [marketTypeFilter, setMarketTypeFilter] = useState("all");
 
   const marketsQuery = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const opportunitiesQuery = useQuery({
@@ -125,15 +127,25 @@ export function App() {
     const normalized = query.trim().toLowerCase();
     return scopedMarkets.filter((market) => {
       const matchesStatus = status === "all" || market.status === status;
+      const matchesLeague = leagueFilter === "all" || (market.league ?? "").toLowerCase() === leagueFilter;
+      const matchesMarketType = marketTypeFilter === "all" || (market.market_type ?? "").toLowerCase() === marketTypeFilter;
       const text = `${market.ticker} ${market.league ?? ""} ${market.market_type ?? ""} ${
         market.event_title ?? ""
       }`.toLowerCase();
-      return matchesStatus && (!normalized || text.includes(normalized));
+      return matchesStatus && matchesLeague && matchesMarketType && (!normalized || text.includes(normalized));
     });
-  }, [scopedMarkets, query, status]);
+  }, [scopedMarkets, leagueFilter, marketTypeFilter, query, status]);
 
   const statuses = useMemo(() => {
     return Array.from(new Set(scopedMarkets.map((market) => market.status).filter(Boolean))).sort();
+  }, [scopedMarkets]);
+
+  const leagues = useMemo(() => {
+    return Array.from(new Set(scopedMarkets.map((market) => market.league).filter(Boolean))).sort();
+  }, [scopedMarkets]);
+
+  const marketTypes = useMemo(() => {
+    return Array.from(new Set(scopedMarkets.map((market) => market.market_type).filter(Boolean))).sort();
   }, [scopedMarkets]);
 
   const latestMetric = metricsQuery.data?.[0] ?? latestByMarketId.get(selectedMarket?.id ?? -1)?.metric ?? null;
@@ -181,7 +193,7 @@ export function App() {
             </div>
           </div>
           <div className="filters">
-            <label className="search-box">
+            <label className="search-box market-search">
               <Search size={16} />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, league, event" />
             </label>
@@ -190,6 +202,22 @@ export function App() {
               {statuses.map((item) => (
                 <option key={item ?? ""} value={item ?? ""}>
                   {item}
+                </option>
+              ))}
+            </select>
+            <select value={leagueFilter} onChange={(event) => setLeagueFilter(event.target.value)} aria-label="Filter league">
+              <option value="all">All leagues</option>
+              {leagues.map((item) => (
+                <option key={item ?? ""} value={(item ?? "").toLowerCase()}>
+                  {(item ?? "").toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <select value={marketTypeFilter} onChange={(event) => setMarketTypeFilter(event.target.value)} aria-label="Filter market type">
+              <option value="all">All markets</option>
+              {marketTypes.map((item) => (
+                <option key={item ?? ""} value={(item ?? "").toLowerCase()}>
+                  {marketTypeLabel(item ?? "")}
                 </option>
               ))}
             </select>
@@ -858,6 +886,16 @@ function marketSideLabel(market: Market, sideMode: SideMode) {
     return `${sideMode.toUpperCase()} ${formatRunLineSelection(selection)}`;
   }
   return `${sideMode.toUpperCase()} ${selection}`;
+}
+
+function marketTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    KXMLBGAME: "Moneyline",
+    KXMLBSPREAD: "Run Line",
+    KXMLBTOTAL: "Total Runs",
+    KXMLBF5TOTAL: "F5 Total Runs"
+  };
+  return labels[value] ?? value;
 }
 
 function formatRunLineSelection(selection: string) {
