@@ -89,6 +89,71 @@ class SharpBookLimitRead(BaseModel):
     limit_amount: float | None
 
 
+class KalshiTradeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    market_id: int
+    trade_id: str
+    timestamp: datetime
+    count: float
+    yes_price: int | None
+    no_price: int | None
+    taker_side: str | None
+    taker_book_side: str | None
+
+
+class MarketFeatureBucketRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    market_id: int
+    bucket_start: datetime
+    bucket_seconds: int
+    sport: str | None
+    league: str | None
+    market_type: str | None
+    time_to_event_minutes: float | None
+    day_of_week: int | None
+    hour_of_day: int | None
+    best_yes_bid: int | None
+    best_no_bid: int | None
+    consensus_fair_yes: float | None
+    consensus_fair_no: float | None
+    edge_yes_at_bid: float | None
+    edge_no_at_bid: float | None
+    volume_delta: float | None
+    contracts_per_minute: float | None
+    taker_yes_contracts: float | None
+    taker_no_contracts: float | None
+    one_sided_flow_ratio: float | None
+    volume_acceleration: float | None
+    spread: int | None
+    total_depth: int | None
+    depth_at_best_yes: int | None
+    depth_at_best_no: int | None
+    orderbook_imbalance: float | None
+    ev_at_best_yes_bid: float | None
+    ev_at_best_no_bid: float | None
+    actual_fill_count: int
+    avg_ev_at_fill: float | None
+    source_quality_flags: dict[str, Any] | None
+
+
+class MarketEventDetectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    market_id: int
+    event_type: str
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: float | None
+    side: str | None
+    magnitude: float | None
+    metadata_json: dict[str, Any] | None
+
+
 class OpportunityScoreRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

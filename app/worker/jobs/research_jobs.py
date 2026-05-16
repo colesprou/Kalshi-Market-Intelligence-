@@ -15,14 +15,21 @@ from app.config import settings
 from app.db import SessionLocal
 from app.models import (
     DerivedMarketMetric,
+    KalshiPrivateFill,
+    KalshiPrivateOrder,
     KalshiOrderbookSnapshot,
+    KalshiTrade,
     Market,
+    MarketEventDetection,
+    MarketFeatureBucket,
     OpportunityScore,
     SharpBookLimitsSnapshot,
     SharpBookOddsSnapshot,
 )
 from app.repositories import JobRunRepository, MarketRepository, SnapshotRepository, utcnow
 from app.services.devig import american_to_decimal, american_to_probability, multiplicative_devig
+from app.services.event_detection import detect_recent_market_events
+from app.services.feature_buckets import build_recent_feature_buckets
 from app.services.metrics import build_metric, calculate_spread, contracts_per_minute
 from app.services.scoring import build_opportunity_score
 
@@ -240,6 +247,125 @@ async def pull_kalshi_orderbooks(db: Session) -> int:
     return rows
 
 
+def pull_kalshi_trades_job() -> None:
+    run_tracked_job("pull_kalshi_trades", lambda db: asyncio.run(pull_kalshi_trades(db)))
+
+
+async def pull_kalshi_trades(db: Session) -> int:
+    client = KalshiClient(settings.kalshi_base_url, settings.kalshi_api_key, settings.kalshi_private_key)
+    rows = 0
+    for market in MarketRepository(db).active_for_polling():
+        try:
+            payload = await client.get_trades(market.ticker, limit=100)
+        except Exception:
+            logger.exception("Kalshi trades poll failed for ticker=%s", market.ticker)
+            continue
+        for trade in payload.get("trades", []):
+            trade_id = str(trade.get("trade_id") or "")
+            if not trade_id or db.scalar(select(KalshiTrade).where(KalshiTrade.trade_id == trade_id)):
+                continue
+            timestamp = parse_dt(trade.get("created_time"))
+            if timestamp is None:
+                continue
+            db.add(
+                KalshiTrade(
+                    market_id=market.id,
+                    trade_id=trade_id,
+                    timestamp=timestamp,
+                    count=float(trade.get("count_fp") or trade.get("count") or 0),
+                    yes_price=dollars_to_cents(trade.get("yes_price_dollars")),
+                    no_price=dollars_to_cents(trade.get("no_price_dollars")),
+                    taker_side=trade.get("taker_side") or trade.get("taker_outcome_side"),
+                    taker_book_side=trade.get("taker_book_side"),
+                    raw_payload=trade,
+                )
+            )
+            rows += 1
+    db.commit()
+    return rows
+
+
+def pull_kalshi_private_fills_job() -> None:
+    run_tracked_job("pull_kalshi_private_fills", lambda db: asyncio.run(pull_kalshi_private_fills(db)))
+
+
+async def pull_kalshi_private_fills(db: Session) -> int:
+    if not settings.kalshi_private_data_enabled:
+        return 0
+    client = KalshiClient(settings.kalshi_base_url, settings.kalshi_api_key, settings.kalshi_private_key)
+    rows = 0
+    rows += await pull_private_orders(db, client)
+    rows += await pull_private_fills(db, client)
+    db.commit()
+    return rows
+
+
+async def pull_private_orders(db: Session, client: KalshiClient) -> int:
+    rows = 0
+    try:
+        payload = await client.get_portfolio_orders(limit=100)
+    except Exception:
+        logger.exception("Kalshi private orders poll failed")
+        return 0
+    for order in payload.get("orders", []):
+        order_id = str(order.get("order_id") or order.get("id") or "")
+        ticker = order.get("ticker")
+        market = MarketRepository(db).by_ticker(ticker) if ticker else None
+        if not order_id or market is None or db.scalar(select(KalshiPrivateOrder).where(KalshiPrivateOrder.order_id == order_id)):
+            continue
+        created_at = parse_dt(order.get("created_time") or order.get("created_at"))
+        if created_at is None:
+            continue
+        db.add(
+            KalshiPrivateOrder(
+                order_id=order_id,
+                market_id=market.id,
+                created_at=created_at,
+                side=order.get("side") or order.get("outcome"),
+                action=order.get("action"),
+                price=order_price(order),
+                quantity=float(order.get("count") or order.get("count_fp") or order.get("quantity") or 0),
+                status=order.get("status"),
+                raw_payload=order,
+            )
+        )
+        rows += 1
+    return rows
+
+
+async def pull_private_fills(db: Session, client: KalshiClient) -> int:
+    rows = 0
+    try:
+        payload = await client.get_portfolio_fills(limit=100)
+    except Exception:
+        logger.exception("Kalshi private fills poll failed")
+        return 0
+    for fill in payload.get("fills", []):
+        fill_id = str(fill.get("fill_id") or fill.get("trade_id") or fill.get("id") or "")
+        ticker = fill.get("ticker")
+        market = MarketRepository(db).by_ticker(ticker) if ticker else None
+        if not fill_id or market is None or db.scalar(select(KalshiPrivateFill).where(KalshiPrivateFill.fill_id == fill_id)):
+            continue
+        timestamp = parse_dt(fill.get("created_time") or fill.get("created_at"))
+        if timestamp is None:
+            continue
+        db.add(
+            KalshiPrivateFill(
+                fill_id=fill_id,
+                order_id=fill.get("order_id"),
+                market_id=market.id,
+                timestamp=timestamp,
+                side=fill.get("side") or fill.get("outcome"),
+                price=order_price(fill),
+                quantity=float(fill.get("count") or fill.get("count_fp") or fill.get("quantity") or 0),
+                fee=float(fill.get("fee") or fill.get("fee_dollars") or 0),
+                raw_payload=fill,
+            )
+        )
+        rows += 1
+    return rows
+
+
 def pull_sharp_book_odds_job() -> None:
     run_tracked_job("pull_sharp_book_odds", lambda db: asyncio.run(pull_sharp_book_odds(db, include_limits=False)))
 
@@ -355,6 +481,22 @@ def calculate_opportunity_scores(db: Session) -> int:
     return rows
 
 
+def calculate_market_feature_buckets_job() -> None:
+    run_tracked_job("calculate_market_feature_buckets", calculate_market_feature_buckets)
+
+
+def calculate_market_feature_buckets(db: Session) -> int:
+    return build_recent_feature_buckets(db, MarketRepository(db).active_for_polling())
+
+
+def detect_market_events_job() -> None:
+    run_tracked_job("detect_market_events", detect_market_events)
+
+
+def detect_market_events(db: Session) -> int:
+    return detect_recent_market_events(db, MarketRepository(db).active_for_polling())
+
+
 def cleanup_aggregation_job() -> None:
     run_tracked_job("cleanup_aggregation", cleanup_aggregation)
 
@@ -381,6 +523,19 @@ def market_volume(market_data: dict[str, Any]) -> int | None:
         value = market_data.get(key)
         if value is not None:
             return quantity_to_int(value)
+    return None
+
+
+def order_price(payload: dict[str, Any]) -> int | None:
+    for key in ("price", "yes_price", "no_price"):
+        value = payload.get(key)
+        if value is not None:
+            numeric = float(value)
+            return dollars_to_cents(numeric) if 0 < numeric <= 1 else int(numeric)
+    for key in ("price_dollars", "yes_price_dollars", "no_price_dollars"):
+        value = payload.get(key)
+        if value is not None:
+            return dollars_to_cents(value)
     return None
 
 

@@ -26,7 +26,16 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { api, DerivedMetric, Market, Opportunity, OrderbookSnapshot, SharpBookLimit, SharpBookOdds } from "./api";
+import {
+  api,
+  DerivedMetric,
+  Market,
+  MarketFeatureBucket,
+  Opportunity,
+  OrderbookSnapshot,
+  SharpBookLimit,
+  SharpBookOdds
+} from "./api";
 
 type OpportunityKind = "all" | "stale" | "market-making" | "queue-positioning";
 type SideMode = "yes" | "no";
@@ -104,6 +113,11 @@ export function App() {
     queryFn: () => api.orderbooks(selectedMarket!.ticker),
     enabled: Boolean(selectedMarket)
   });
+  const featuresQuery = useQuery({
+    queryKey: ["features", selectedMarket?.ticker],
+    queryFn: () => api.features(selectedMarket!.ticker),
+    enabled: Boolean(selectedMarket)
+  });
   const sharpOddsQuery = useQuery({
     queryKey: ["sharp-odds", selectedMarket?.ticker, sideMode],
     queryFn: () => api.sharpOdds(selectedMarket!.ticker, sideMode),
@@ -168,6 +182,7 @@ export function App() {
               void opportunitiesQuery.refetch();
               void metricsQuery.refetch();
               void orderbooksQuery.refetch();
+              void featuresQuery.refetch();
               void sharpOddsQuery.refetch();
               void limitsQuery.refetch();
             }}
@@ -248,10 +263,17 @@ export function App() {
             orderbook={latestOrderbook}
             metrics={metricsQuery.data ?? []}
             orderbooks={orderbooksQuery.data ?? []}
+            features={featuresQuery.data ?? []}
             sharpOdds={sharpOddsQuery.data ?? []}
             limits={limitsQuery.data ?? []}
             sideMode={sideMode}
-            loading={metricsQuery.isLoading || orderbooksQuery.isLoading || sharpOddsQuery.isLoading || limitsQuery.isLoading}
+            loading={
+              metricsQuery.isLoading ||
+              orderbooksQuery.isLoading ||
+              featuresQuery.isLoading ||
+              sharpOddsQuery.isLoading ||
+              limitsQuery.isLoading
+            }
           />
         </section>
       </section>
@@ -424,6 +446,7 @@ function MarketDetail({
   orderbook,
   metrics,
   orderbooks,
+  features,
   sharpOdds,
   limits,
   sideMode,
@@ -434,6 +457,7 @@ function MarketDetail({
   orderbook: OrderbookSnapshot | null;
   metrics: DerivedMetric[];
   orderbooks: OrderbookSnapshot[];
+  features: MarketFeatureBucket[];
   sharpOdds: SharpBookOdds[];
   limits: SharpBookLimit[];
   sideMode: SideMode;
@@ -453,7 +477,7 @@ function MarketDetail({
     selectedDepthPrice === null ? `${sideMode.toUpperCase()} best bid depth` : `${sideMode.toUpperCase()} ${selectedDepthPrice}c depth`;
   const timeWindowLabel = timeWindows.find((window) => window.id === timeWindow)?.label ?? "1h";
   const priceChartData = filterTimeWindow(buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice), timeWindow);
-  const volumeChartData = filterTimeWindow(buildVolumeChartData(metrics, orderbooks, sideMode), timeWindow);
+  const volumeChartData = filterTimeWindow(buildVolumeChartData(metrics, orderbooks, features, sideMode), timeWindow);
   const sharpChartData = filterTimeWindow(buildSharpOddsChartData(sharpOdds), timeWindow);
   const limitChartData = filterTimeWindow(buildLimitChartData(limits), timeWindow);
   const fairPrice = sideFairPrice(metric, sideMode);
@@ -813,7 +837,25 @@ function buildPriceChartData(
     })
 }
 
-function buildVolumeChartData(metrics: DerivedMetric[], orderbooks: OrderbookSnapshot[], sideMode: SideMode) {
+function buildVolumeChartData(
+  metrics: DerivedMetric[],
+  orderbooks: OrderbookSnapshot[],
+  features: MarketFeatureBucket[],
+  sideMode: SideMode
+) {
+  if (features.length) {
+    return [...features]
+      .reverse()
+      .map((bucket) => ({
+        timestampMs: new Date(bucket.bucket_start).getTime(),
+        time: new Date(bucket.bucket_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        intervalVolume: bucket.volume_delta ?? 0,
+        cumulativeVolume: null,
+        contractsPerMinute: bucket.contracts_per_minute,
+        evAtBestBid: sideMode === "no" ? bucket.ev_at_best_no_bid : bucket.ev_at_best_yes_bid
+      }));
+  }
+
   const metricByMinute = new Map<string, DerivedMetric>();
   for (const metric of metrics) {
     metricByMinute.set(metric.timestamp.slice(0, 16), metric);

@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import (
     DerivedMarketMetric,
+    KalshiTrade,
     KalshiOrderbookSnapshot,
     Market,
+    MarketEventDetection,
+    MarketFeatureBucket,
     OpportunityScore,
     SharpBookLimitsSnapshot,
     SharpBookOddsSnapshot,
@@ -19,7 +22,10 @@ from app.repositories import MarketRepository, SnapshotRepository
 from app.schemas import (
     DerivedMetricRead,
     HealthRead,
+    KalshiTradeRead,
     MarketRead,
+    MarketEventDetectionRead,
+    MarketFeatureBucketRead,
     OpportunityRead,
     OpportunityScoreRead,
     OrderbookSnapshotRead,
@@ -130,6 +136,69 @@ def get_market_limits(
     )
     if sportsbook:
         stmt = stmt.where(SharpBookLimitsSnapshot.sportsbook == sportsbook)
+    return list(db.scalars(stmt))
+
+
+@router.get("/markets/{ticker}/trades", response_model=list[KalshiTradeRead])
+def get_market_trades(
+    ticker: str,
+    limit: int = Query(default=300, ge=1, le=2000),
+    db: Session = Depends(get_db),
+) -> list[KalshiTrade]:
+    market = MarketRepository(db).by_ticker(ticker)
+    if market is None:
+        raise HTTPException(status_code=404, detail="Market not found")
+    return list(
+        db.scalars(
+            select(KalshiTrade)
+            .where(KalshiTrade.market_id == market.id)
+            .order_by(desc(KalshiTrade.timestamp))
+            .limit(limit)
+        )
+    )
+
+
+@router.get("/markets/{ticker}/features", response_model=list[MarketFeatureBucketRead])
+def get_market_features(
+    ticker: str,
+    bucket_seconds: int = Query(default=60, ge=1, le=3600),
+    limit: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> list[MarketFeatureBucket]:
+    market = MarketRepository(db).by_ticker(ticker)
+    if market is None:
+        raise HTTPException(status_code=404, detail="Market not found")
+    return list(
+        db.scalars(
+            select(MarketFeatureBucket)
+            .where(
+                MarketFeatureBucket.market_id == market.id,
+                MarketFeatureBucket.bucket_seconds == bucket_seconds,
+            )
+            .order_by(desc(MarketFeatureBucket.bucket_start))
+            .limit(limit)
+        )
+    )
+
+
+@router.get("/markets/{ticker}/events", response_model=list[MarketEventDetectionRead])
+def get_market_events(
+    ticker: str,
+    event_type: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> list[MarketEventDetection]:
+    market = MarketRepository(db).by_ticker(ticker)
+    if market is None:
+        raise HTTPException(status_code=404, detail="Market not found")
+    stmt = (
+        select(MarketEventDetection)
+        .where(MarketEventDetection.market_id == market.id)
+        .order_by(desc(MarketEventDetection.started_at))
+        .limit(limit)
+    )
+    if event_type:
+        stmt = stmt.where(MarketEventDetection.event_type == event_type)
     return list(db.scalars(stmt))
 
 

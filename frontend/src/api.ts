@@ -88,6 +88,53 @@ export type SharpBookLimit = {
   limit_amount: number | null;
 };
 
+export type MarketFeatureBucket = {
+  id: number;
+  market_id: number;
+  bucket_start: string;
+  bucket_seconds: number;
+  sport: string | null;
+  league: string | null;
+  market_type: string | null;
+  time_to_event_minutes: number | null;
+  day_of_week: number | null;
+  hour_of_day: number | null;
+  best_yes_bid: number | null;
+  best_no_bid: number | null;
+  consensus_fair_yes: number | null;
+  consensus_fair_no: number | null;
+  edge_yes_at_bid: number | null;
+  edge_no_at_bid: number | null;
+  volume_delta: number | null;
+  contracts_per_minute: number | null;
+  taker_yes_contracts: number | null;
+  taker_no_contracts: number | null;
+  one_sided_flow_ratio: number | null;
+  volume_acceleration: number | null;
+  spread: number | null;
+  total_depth: number | null;
+  depth_at_best_yes: number | null;
+  depth_at_best_no: number | null;
+  orderbook_imbalance: number | null;
+  ev_at_best_yes_bid: number | null;
+  ev_at_best_no_bid: number | null;
+  actual_fill_count: number;
+  avg_ev_at_fill: number | null;
+  source_quality_flags: Record<string, boolean> | null;
+};
+
+export type MarketEventDetection = {
+  id: number;
+  market_id: number;
+  event_type: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  side: string | null;
+  magnitude: number | null;
+  metadata_json: Record<string, unknown> | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string): Promise<T> {
@@ -104,6 +151,8 @@ export const api = {
     request<Opportunity[]>(kind ? `/opportunities/${kind}` : "/opportunities"),
   metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=1000`),
   orderbooks: (ticker: string) => request<OrderbookSnapshot[]>(`/markets/${ticker}/orderbooks?limit=1000`),
+  features: (ticker: string) => request<MarketFeatureBucket[]>(`/markets/${ticker}/features?bucket_seconds=60&limit=2000`),
+  events: (ticker: string) => request<MarketEventDetection[]>(`/markets/${ticker}/events?limit=500`),
   sharpOdds: (ticker: string, side: "yes" | "no") =>
     request<SharpBookOdds[]>(`/markets/${ticker}/sharp-odds?side=${side}&limit=2000`),
   limits: (ticker: string) => request<SharpBookLimit[]>(`/markets/${ticker}/limits?sportsbook=Pinnacle&limit=2000`),

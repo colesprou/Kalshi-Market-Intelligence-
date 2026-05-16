@@ -32,6 +32,11 @@ class Market(TimestampMixin, Base):
     sharp_limits_snapshots = relationship("SharpBookLimitsSnapshot", back_populates="market")
     derived_metrics = relationship("DerivedMarketMetric", back_populates="market")
     opportunity_scores = relationship("OpportunityScore", back_populates="market")
+    kalshi_trades = relationship("KalshiTrade", back_populates="market")
+    private_orders = relationship("KalshiPrivateOrder", back_populates="market")
+    private_fills = relationship("KalshiPrivateFill", back_populates="market")
+    feature_buckets = relationship("MarketFeatureBucket", back_populates="market")
+    event_detections = relationship("MarketEventDetection", back_populates="market")
 
 
 class KalshiOrderbookSnapshot(Base):
@@ -89,6 +94,133 @@ class SharpBookLimitsSnapshot(Base):
     limit_amount = Column(Float)
 
     market = relationship("Market", back_populates="sharp_limits_snapshots")
+
+
+class KalshiTrade(Base):
+    __tablename__ = "kalshi_trades"
+    __table_args__ = (
+        UniqueConstraint("trade_id", name="uq_kalshi_trades_trade_id"),
+        Index("ix_kalshi_trades_market_timestamp", "market_id", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    trade_id = Column(String(128), nullable=False)
+    timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
+    count = Column(Float, nullable=False)
+    yes_price = Column(Integer)
+    no_price = Column(Integer)
+    taker_side = Column(String(32), index=True)
+    taker_book_side = Column(String(32), index=True)
+    raw_payload = Column(JSON)
+
+    market = relationship("Market", back_populates="kalshi_trades")
+
+
+class KalshiPrivateOrder(Base):
+    __tablename__ = "kalshi_private_orders"
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_kalshi_private_orders_order_id"),
+        Index("ix_private_orders_market_created", "market_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    order_id = Column(String(128), nullable=False)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), index=True, nullable=False)
+    side = Column(String(32), index=True)
+    action = Column(String(32), index=True)
+    price = Column(Integer)
+    quantity = Column(Float)
+    status = Column(String(32), index=True)
+    raw_payload = Column(JSON)
+
+    market = relationship("Market", back_populates="private_orders")
+
+
+class KalshiPrivateFill(Base):
+    __tablename__ = "kalshi_private_fills"
+    __table_args__ = (
+        UniqueConstraint("fill_id", name="uq_kalshi_private_fills_fill_id"),
+        Index("ix_private_fills_market_timestamp", "market_id", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    fill_id = Column(String(128), nullable=False)
+    order_id = Column(String(128), index=True)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
+    side = Column(String(32), index=True)
+    price = Column(Integer)
+    quantity = Column(Float)
+    fee = Column(Float)
+    raw_payload = Column(JSON)
+
+    market = relationship("Market", back_populates="private_fills")
+
+
+class MarketFeatureBucket(Base):
+    __tablename__ = "market_feature_buckets"
+    __table_args__ = (
+        UniqueConstraint("market_id", "bucket_start", "bucket_seconds", name="uq_feature_bucket_market_start_size"),
+        Index("ix_feature_buckets_market_start", "market_id", "bucket_start"),
+        Index("ix_feature_buckets_slice", "sport", "league", "market_type", "bucket_start"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    bucket_start = Column(DateTime(timezone=True), index=True, nullable=False)
+    bucket_seconds = Column(Integer, default=60, nullable=False)
+    sport = Column(String(64), index=True)
+    league = Column(String(64), index=True)
+    market_type = Column(String(64), index=True)
+    time_to_event_minutes = Column(Float)
+    day_of_week = Column(Integer, index=True)
+    hour_of_day = Column(Integer, index=True)
+    best_yes_bid = Column(Integer)
+    best_no_bid = Column(Integer)
+    consensus_fair_yes = Column(Float)
+    consensus_fair_no = Column(Float)
+    edge_yes_at_bid = Column(Float)
+    edge_no_at_bid = Column(Float)
+    volume_delta = Column(Float)
+    contracts_per_minute = Column(Float)
+    taker_yes_contracts = Column(Float)
+    taker_no_contracts = Column(Float)
+    one_sided_flow_ratio = Column(Float)
+    volume_acceleration = Column(Float)
+    spread = Column(Integer)
+    total_depth = Column(Integer)
+    depth_at_best_yes = Column(Integer)
+    depth_at_best_no = Column(Integer)
+    orderbook_imbalance = Column(Float)
+    ev_at_best_yes_bid = Column(Float)
+    ev_at_best_no_bid = Column(Float)
+    actual_fill_count = Column(Integer, default=0, nullable=False)
+    avg_ev_at_fill = Column(Float)
+    source_quality_flags = Column(JSON)
+
+    market = relationship("Market", back_populates="feature_buckets")
+
+
+class MarketEventDetection(Base):
+    __tablename__ = "market_event_detections"
+    __table_args__ = (
+        Index("ix_market_events_market_started", "market_id", "started_at"),
+        Index("ix_market_events_type_started", "event_type", "started_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    event_type = Column(String(64), index=True, nullable=False)
+    started_at = Column(DateTime(timezone=True), index=True, nullable=False)
+    ended_at = Column(DateTime(timezone=True))
+    duration_seconds = Column(Float)
+    side = Column(String(32), index=True)
+    magnitude = Column(Float)
+    metadata_json = Column(JSON)
+
+    market = relationship("Market", back_populates="event_detections")
 
 
 class DerivedMarketMetric(Base):

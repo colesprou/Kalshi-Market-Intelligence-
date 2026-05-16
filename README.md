@@ -63,6 +63,7 @@ POLLING_LEAGUES=mlb
 POLLING_MARKETS=Moneyline,Run Line,Total Runs,1st Half Total Runs
 SHARP_BOOKS=Pinnacle,Circa,BetOnline
 CORS_ORIGINS=http://localhost:5173
+KALSHI_PRIVATE_DATA_ENABLED=false
 ```
 
 Polling intervals and feature flags are also environment-driven. See
@@ -136,6 +137,12 @@ python scripts/migrate_sqlite_to_postgres.py --truncate
 Use `--truncate` only when the target database can be replaced with the local
 dataset.
 
+Backfill 1-minute BI feature buckets from existing snapshots:
+
+```bash
+python scripts/backfill_market_feature_buckets.py --truncate
+```
+
 ## API
 
 - `GET /health`
@@ -143,6 +150,9 @@ dataset.
 - `GET /markets/{ticker}`
 - `GET /markets/{ticker}/metrics`
 - `GET /markets/{ticker}/orderbooks`
+- `GET /markets/{ticker}/trades`
+- `GET /markets/{ticker}/features`
+- `GET /markets/{ticker}/events`
 - `GET /markets/{ticker}/sharp-odds`
 - `GET /markets/{ticker}/limits`
 - `GET /opportunities`

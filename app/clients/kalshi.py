@@ -88,6 +88,18 @@ class KalshiClient:
     async def get_trades(self, ticker: str, limit: int = 100) -> dict[str, Any]:
         return await self._get("/markets/trades", params={"ticker": ticker, "limit": limit})
 
+    async def get_portfolio_orders(self, limit: int = 100, cursor: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return await self._get("/portfolio/orders", params=params)
+
+    async def get_portfolio_fills(self, limit: int = 100, cursor: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return await self._get("/portfolio/fills", params=params)
+
 
 def parse_orderbook(payload: dict[str, Any]) -> ParsedOrderbook:
     if "orderbook_fp" in payload:
