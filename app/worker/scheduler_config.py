@@ -11,6 +11,7 @@ from app.worker.jobs.research_jobs import (
     cleanup_aggregation_job,
     detect_market_events_job,
     discover_markets_job,
+    fast_poll_live_markets_job,
     pull_kalshi_orderbooks_job,
     pull_kalshi_private_fills_job,
     pull_kalshi_trades_job,
@@ -34,6 +35,13 @@ def build_scheduler() -> BlockingScheduler:
         pull_kalshi_orderbooks_job,
         IntervalTrigger(seconds=settings.kalshi_orderbook_interval_seconds),
         id="pull_kalshi_orderbooks",
+        replace_existing=True,
+        **defaults,
+    )
+    scheduler.add_job(
+        fast_poll_live_markets_job,
+        IntervalTrigger(seconds=settings.fast_poll_interval_seconds),
+        id="fast_poll_live_markets",
         replace_existing=True,
         **defaults,
     )

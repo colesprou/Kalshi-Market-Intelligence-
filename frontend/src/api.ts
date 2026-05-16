@@ -135,6 +135,35 @@ export type MarketEventDetection = {
   metadata_json: Record<string, unknown> | null;
 };
 
+export type LiveMarketSignal = {
+  id: number;
+  market_id: number;
+  timestamp: string;
+  signal_type: string;
+  contracts_last_5s: number | null;
+  contracts_last_10s: number | null;
+  contracts_last_30s: number | null;
+  contracts_last_60s: number | null;
+  trailing_cpm_5m: number | null;
+  expected_contracts_10s: number | null;
+  flow_spike_ratio: number | null;
+  taker_side: string | null;
+  taker_side_imbalance: number | null;
+  taker_yes_last_10s: number | null;
+  taker_no_last_10s: number | null;
+  best_yes_bid: number | null;
+  best_yes_ask: number | null;
+  best_no_bid: number | null;
+  best_no_ask: number | null;
+  spread: number | null;
+  total_depth: number | null;
+  depth_change_after_spike: number | null;
+  spread_change_after_spike: number | null;
+  kalshi_price_change_after_spike: number | null;
+  signal_score: number | null;
+  metadata_json: Record<string, unknown> | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string): Promise<T> {
@@ -153,6 +182,7 @@ export const api = {
   orderbooks: (ticker: string) => request<OrderbookSnapshot[]>(`/markets/${ticker}/orderbooks?limit=1000`),
   features: (ticker: string) => request<MarketFeatureBucket[]>(`/markets/${ticker}/features?bucket_seconds=60&limit=2000`),
   events: (ticker: string) => request<MarketEventDetection[]>(`/markets/${ticker}/events?limit=500`),
+  liveSignals: (ticker: string) => request<LiveMarketSignal[]>(`/markets/${ticker}/live-signals?limit=500`),
   sharpOdds: (ticker: string, side: "yes" | "no") =>
     request<SharpBookOdds[]>(`/markets/${ticker}/sharp-odds?side=${side}&limit=2000`),
   limits: (ticker: string) => request<SharpBookLimit[]>(`/markets/${ticker}/limits?sportsbook=Pinnacle&limit=2000`),

@@ -22,6 +22,7 @@ from app.models import (
     Market,
     MarketEventDetection,
     MarketFeatureBucket,
+    LiveMarketSignal,
     OpportunityScore,
     SharpBookLimitsSnapshot,
     SharpBookOddsSnapshot,
@@ -30,6 +31,7 @@ from app.repositories import JobRunRepository, MarketRepository, SnapshotReposit
 from app.services.devig import american_to_decimal, american_to_probability, multiplicative_devig
 from app.services.event_detection import detect_recent_market_events
 from app.services.feature_buckets import build_recent_feature_buckets
+from app.services.live_signals import build_live_signals
 from app.services.metrics import build_metric, calculate_spread, contracts_per_minute
 from app.services.scoring import build_opportunity_score
 
@@ -260,27 +262,63 @@ async def pull_kalshi_trades(db: Session) -> int:
         except Exception:
             logger.exception("Kalshi trades poll failed for ticker=%s", market.ticker)
             continue
-        for trade in payload.get("trades", []):
-            trade_id = str(trade.get("trade_id") or "")
-            if not trade_id or db.scalar(select(KalshiTrade).where(KalshiTrade.trade_id == trade_id)):
-                continue
-            timestamp = parse_dt(trade.get("created_time"))
-            if timestamp is None:
-                continue
-            db.add(
-                KalshiTrade(
-                    market_id=market.id,
-                    trade_id=trade_id,
-                    timestamp=timestamp,
-                    count=float(trade.get("count_fp") or trade.get("count") or 0),
-                    yes_price=dollars_to_cents(trade.get("yes_price_dollars")),
-                    no_price=dollars_to_cents(trade.get("no_price_dollars")),
-                    taker_side=trade.get("taker_side") or trade.get("taker_outcome_side"),
-                    taker_book_side=trade.get("taker_book_side"),
-                    raw_payload=trade,
-                )
+        rows += insert_trade_rows(db, market, payload.get("trades", []))
+    db.commit()
+    return rows
+
+
+def fast_poll_live_markets_job() -> None:
+    run_tracked_job("fast_poll_live_markets", lambda db: asyncio.run(fast_poll_live_markets(db)))
+
+
+async def fast_poll_live_markets(db: Session) -> int:
+    if not settings.fast_poll_enabled:
+        return 0
+    client = KalshiClient(settings.kalshi_base_url, settings.kalshi_api_key, settings.kalshi_private_key)
+    rows = 0
+    markets = MarketRepository(db).fast_poll_candidates(
+        limit=settings.fast_poll_market_limit,
+        window_minutes=settings.fast_poll_window_minutes,
+    )
+    for market in markets:
+        now = utcnow()
+        try:
+            orderbook = await client.get_orderbook(market.ticker)
+            market_payload = await client.get_market(market.ticker)
+            trades_payload = await client.get_trades(market.ticker, limit=100)
+        except Exception:
+            logger.exception("Fast poll failed for ticker=%s", market.ticker)
+            continue
+
+        market_data = market_payload.get("market", {})
+        volume = market_volume(market_data)
+        recent = SnapshotRepository(db).orderbooks_since(market.id, now - timedelta(minutes=10))
+        cpm = contracts_per_minute(recent) if recent else None
+        db.add(
+            KalshiOrderbookSnapshot(
+                market_id=market.id,
+                timestamp=now,
+                best_yes_bid=orderbook.best_yes_bid,
+                best_yes_ask=orderbook.best_yes_ask,
+                best_no_bid=orderbook.best_no_bid,
+                best_no_ask=orderbook.best_no_ask,
+                yes_bid_depth=sum(orderbook.yes.values()),
+                yes_ask_depth=orderbook.no.get(orderbook.best_no_bid or -1, 0),
+                no_bid_depth=sum(orderbook.no.values()),
+                no_ask_depth=orderbook.yes.get(orderbook.best_yes_bid or -1, 0),
+                total_depth=sum(orderbook.yes.values()) + sum(orderbook.no.values()),
+                spread=calculate_spread(orderbook.best_yes_bid, orderbook.best_yes_ask),
+                contracts_per_minute=cpm,
+                volume=volume,
+                yes_book={str(price): qty for price, qty in orderbook.yes.items()},
+                no_book={str(price): qty for price, qty in orderbook.no.items()},
             )
-            rows += 1
+        )
+        rows += 1
+        market.status = market_data.get("status") or market.status
+        market.event_title = market_data.get("title") or market_data.get("subtitle") or market.event_title
+        rows += insert_trade_rows(db, market, trades_payload.get("trades", []))
+        rows += build_live_signals(db, market, now=now)
     db.commit()
     return rows
 
@@ -524,6 +562,32 @@ def market_volume(market_data: dict[str, Any]) -> int | None:
         if value is not None:
             return quantity_to_int(value)
     return None
+
+
+def insert_trade_rows(db: Session, market: Market, trades: list[dict[str, Any]]) -> int:
+    rows = 0
+    for trade in trades:
+        trade_id = str(trade.get("trade_id") or "")
+        if not trade_id or db.scalar(select(KalshiTrade).where(KalshiTrade.trade_id == trade_id)):
+            continue
+        timestamp = parse_dt(trade.get("created_time"))
+        if timestamp is None:
+            continue
+        db.add(
+            KalshiTrade(
+                market_id=market.id,
+                trade_id=trade_id,
+                timestamp=timestamp,
+                count=float(trade.get("count_fp") or trade.get("count") or 0),
+                yes_price=dollars_to_cents(trade.get("yes_price_dollars")),
+                no_price=dollars_to_cents(trade.get("no_price_dollars")),
+                taker_side=trade.get("taker_side") or trade.get("taker_outcome_side"),
+                taker_book_side=trade.get("taker_book_side"),
+                raw_payload=trade,
+            )
+        )
+        rows += 1
+    return rows
 
 
 def order_price(payload: dict[str, Any]) -> int | None:

@@ -69,6 +69,28 @@ class MarketRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def fast_poll_candidates(self, limit: int, window_minutes: int) -> list[Market]:
+        now = utcnow()
+        window_start = now - timedelta(minutes=window_minutes)
+        window_end = now + timedelta(minutes=window_minutes)
+        stmt = (
+            select(Market)
+            .where(
+                Market.status.in_(["open", "active", "unplayed", "live"]),
+                (
+                    (Market.status == "live")
+                    | (
+                        Market.event_start_time.isnot(None)
+                        & (Market.event_start_time >= window_start)
+                        & (Market.event_start_time <= window_end)
+                    )
+                ),
+            )
+            .order_by((Market.status == "live").desc(), Market.event_start_time.nulls_last(), Market.ticker)
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
 
 class SnapshotRepository:
     def __init__(self, db: Session) -> None:

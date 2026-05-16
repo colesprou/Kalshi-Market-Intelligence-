@@ -11,6 +11,7 @@ from app.models import (
     DerivedMarketMetric,
     KalshiTrade,
     KalshiOrderbookSnapshot,
+    LiveMarketSignal,
     Market,
     MarketEventDetection,
     MarketFeatureBucket,
@@ -23,6 +24,7 @@ from app.schemas import (
     DerivedMetricRead,
     HealthRead,
     KalshiTradeRead,
+    LiveMarketSignalRead,
     MarketRead,
     MarketEventDetectionRead,
     MarketFeatureBucketRead,
@@ -199,6 +201,27 @@ def get_market_events(
     )
     if event_type:
         stmt = stmt.where(MarketEventDetection.event_type == event_type)
+    return list(db.scalars(stmt))
+
+
+@router.get("/markets/{ticker}/live-signals", response_model=list[LiveMarketSignalRead])
+def get_market_live_signals(
+    ticker: str,
+    signal_type: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> list[LiveMarketSignal]:
+    market = MarketRepository(db).by_ticker(ticker)
+    if market is None:
+        raise HTTPException(status_code=404, detail="Market not found")
+    stmt = (
+        select(LiveMarketSignal)
+        .where(LiveMarketSignal.market_id == market.id)
+        .order_by(desc(LiveMarketSignal.timestamp))
+        .limit(limit)
+    )
+    if signal_type:
+        stmt = stmt.where(LiveMarketSignal.signal_type == signal_type)
     return list(db.scalars(stmt))
 
 

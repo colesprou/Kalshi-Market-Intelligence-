@@ -64,6 +64,10 @@ POLLING_MARKETS=Moneyline,Run Line,Total Runs,1st Half Total Runs
 SHARP_BOOKS=Pinnacle,Circa,BetOnline
 CORS_ORIGINS=http://localhost:5173
 KALSHI_PRIVATE_DATA_ENABLED=false
+FAST_POLL_ENABLED=false
+FAST_POLL_INTERVAL_SECONDS=5
+FAST_POLL_MARKET_LIMIT=20
+FAST_POLL_WINDOW_MINUTES=15
 ```
 
 Polling intervals and feature flags are also environment-driven. See
@@ -153,6 +157,7 @@ python scripts/backfill_market_feature_buckets.py --truncate
 - `GET /markets/{ticker}/trades`
 - `GET /markets/{ticker}/features`
 - `GET /markets/{ticker}/events`
+- `GET /markets/{ticker}/live-signals`
 - `GET /markets/{ticker}/sharp-odds`
 - `GET /markets/{ticker}/limits`
 - `GET /opportunities`

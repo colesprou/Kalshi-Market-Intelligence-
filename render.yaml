@@ -23,6 +23,8 @@ services:
         value: Pinnacle,Circa Sports,BetOnline,Betcris
       - key: KALSHI_PRIVATE_DATA_ENABLED
         value: "false"
+      - key: FAST_POLL_ENABLED
+        value: "false"
       - key: KALSHI_API_KEY
         sync: false
       - key: KALSHI_PRIVATE_KEY
@@ -60,6 +62,14 @@ services:
         value: 60
       - key: KALSHI_PRIVATE_DATA_ENABLED
         value: "false"
+      - key: FAST_POLL_ENABLED
+        value: "false"
+      - key: FAST_POLL_INTERVAL_SECONDS
+        value: 5
+      - key: FAST_POLL_MARKET_LIMIT
+        value: 20
+      - key: FAST_POLL_WINDOW_MINUTES
+        value: 15
       - key: KALSHI_API_KEY
         sync: false
       - key: KALSHI_PRIVATE_KEY

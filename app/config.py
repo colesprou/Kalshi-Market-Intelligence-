@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     event_detection_interval_seconds: int = Field(default=60, alias="EVENT_DETECTION_INTERVAL_SECONDS")
     cleanup_interval_seconds: int = Field(default=86400, alias="CLEANUP_INTERVAL_SECONDS")
     kalshi_private_data_enabled: bool = Field(default=False, alias="KALSHI_PRIVATE_DATA_ENABLED")
+    fast_poll_enabled: bool = Field(default=False, alias="FAST_POLL_ENABLED")
+    fast_poll_interval_seconds: int = Field(default=5, alias="FAST_POLL_INTERVAL_SECONDS")
+    fast_poll_market_limit: int = Field(default=20, alias="FAST_POLL_MARKET_LIMIT")
+    fast_poll_window_minutes: int = Field(default=15, alias="FAST_POLL_WINDOW_MINUTES")
 
     polling_leagues_csv: str = Field(default="mlb", alias="POLLING_LEAGUES")
     polling_markets_csv: str = Field(default="Moneyline,Run Line,Total Runs,1st Half Total Runs", alias="POLLING_MARKETS")

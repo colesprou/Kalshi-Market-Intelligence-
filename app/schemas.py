@@ -154,6 +154,37 @@ class MarketEventDetectionRead(BaseModel):
     metadata_json: dict[str, Any] | None
 
 
+class LiveMarketSignalRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    market_id: int
+    timestamp: datetime
+    signal_type: str
+    contracts_last_5s: float | None
+    contracts_last_10s: float | None
+    contracts_last_30s: float | None
+    contracts_last_60s: float | None
+    trailing_cpm_5m: float | None
+    expected_contracts_10s: float | None
+    flow_spike_ratio: float | None
+    taker_side: str | None
+    taker_side_imbalance: float | None
+    taker_yes_last_10s: float | None
+    taker_no_last_10s: float | None
+    best_yes_bid: int | None
+    best_yes_ask: int | None
+    best_no_bid: int | None
+    best_no_ask: int | None
+    spread: int | None
+    total_depth: int | None
+    depth_change_after_spike: int | None
+    spread_change_after_spike: int | None
+    kalshi_price_change_after_spike: int | None
+    signal_score: float | None
+    metadata_json: dict[str, Any] | None
+
+
 class OpportunityScoreRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

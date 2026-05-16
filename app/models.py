@@ -37,6 +37,7 @@ class Market(TimestampMixin, Base):
     private_fills = relationship("KalshiPrivateFill", back_populates="market")
     feature_buckets = relationship("MarketFeatureBucket", back_populates="market")
     event_detections = relationship("MarketEventDetection", back_populates="market")
+    live_signals = relationship("LiveMarketSignal", back_populates="market")
 
 
 class KalshiOrderbookSnapshot(Base):
@@ -221,6 +222,43 @@ class MarketEventDetection(Base):
     metadata_json = Column(JSON)
 
     market = relationship("Market", back_populates="event_detections")
+
+
+class LiveMarketSignal(Base):
+    __tablename__ = "live_market_signals"
+    __table_args__ = (
+        Index("ix_live_signals_market_timestamp", "market_id", "timestamp"),
+        Index("ix_live_signals_type_timestamp", "signal_type", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey("markets.id", ondelete="CASCADE"), index=True, nullable=False)
+    timestamp = Column(DateTime(timezone=True), index=True, nullable=False)
+    signal_type = Column(String(64), index=True, nullable=False)
+    contracts_last_5s = Column(Float)
+    contracts_last_10s = Column(Float)
+    contracts_last_30s = Column(Float)
+    contracts_last_60s = Column(Float)
+    trailing_cpm_5m = Column(Float)
+    expected_contracts_10s = Column(Float)
+    flow_spike_ratio = Column(Float)
+    taker_side = Column(String(32), index=True)
+    taker_side_imbalance = Column(Float)
+    taker_yes_last_10s = Column(Float)
+    taker_no_last_10s = Column(Float)
+    best_yes_bid = Column(Integer)
+    best_yes_ask = Column(Integer)
+    best_no_bid = Column(Integer)
+    best_no_ask = Column(Integer)
+    spread = Column(Integer)
+    total_depth = Column(Integer)
+    depth_change_after_spike = Column(Integer)
+    spread_change_after_spike = Column(Integer)
+    kalshi_price_change_after_spike = Column(Integer)
+    signal_score = Column(Float)
+    metadata_json = Column(JSON)
+
+    market = relationship("Market", back_populates="live_signals")
 
 
 class DerivedMarketMetric(Base):
