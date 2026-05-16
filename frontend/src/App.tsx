@@ -31,6 +31,7 @@ import { api, DerivedMetric, Market, Opportunity, OrderbookSnapshot, SharpBookLi
 type OpportunityKind = "all" | "stale" | "market-making" | "queue-positioning";
 type SideMode = "yes" | "no";
 type MarketScope = "upcoming" | "live" | "past" | "all";
+type TimeWindow = "15m" | "30m" | "1h" | "3h" | "all";
 type DepthLadderDatum = {
   price: string;
   priceCents: number;
@@ -49,6 +50,14 @@ const marketScopes: { id: MarketScope; label: string }[] = [
   { id: "live", label: "Live" },
   { id: "past", label: "Past" },
   { id: "all", label: "All" }
+];
+
+const timeWindows: { id: TimeWindow; label: string; minutes: number | null }[] = [
+  { id: "15m", label: "15m", minutes: 15 },
+  { id: "30m", label: "30m", minutes: 30 },
+  { id: "1h", label: "1h", minutes: 60 },
+  { id: "3h", label: "3h", minutes: 180 },
+  { id: "all", label: "All", minutes: null }
 ];
 
 export function App() {
@@ -271,6 +280,18 @@ function ScopeToggle({ value, onChange }: { value: MarketScope; onChange: (value
   );
 }
 
+function TimeWindowToggle({ value, onChange }: { value: TimeWindow; onChange: (value: TimeWindow) => void }) {
+  return (
+    <div className="time-toggle" aria-label="Chart time window">
+      {timeWindows.map((window) => (
+        <button key={window.id} className={value === window.id ? "active" : ""} onClick={() => onChange(window.id)}>
+          {window.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MarketTable({
   markets,
   latestByMarketId,
@@ -391,18 +412,21 @@ function MarketDetail({
   loading: boolean;
 }) {
   const [selectedDepthPrice, setSelectedDepthPrice] = useState<number | null>(null);
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>("1h");
 
   useEffect(() => {
     setSelectedDepthPrice(null);
+    setTimeWindow("1h");
   }, [market?.ticker, sideMode]);
 
   if (!market) return <EmptyState title="Select a market" detail="Market details will appear once discovery finds active tickers." />;
 
   const trackedDepthLabel =
     selectedDepthPrice === null ? `${sideMode.toUpperCase()} best bid depth` : `${sideMode.toUpperCase()} ${selectedDepthPrice}c depth`;
-  const priceChartData = buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice);
-  const sharpChartData = buildSharpOddsChartData(sharpOdds);
-  const limitChartData = buildLimitChartData(limits);
+  const timeWindowLabel = timeWindows.find((window) => window.id === timeWindow)?.label ?? "1h";
+  const priceChartData = filterTimeWindow(buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice), timeWindow);
+  const sharpChartData = filterTimeWindow(buildSharpOddsChartData(sharpOdds), timeWindow);
+  const limitChartData = filterTimeWindow(buildLimitChartData(limits), timeWindow);
   const fairPrice = sideFairPrice(metric, sideMode);
   const edge = sideEdge(metric, sideMode);
   return (
@@ -450,13 +474,16 @@ function MarketDetail({
         <div className="panel-heading">
           <div>
             <h2>Kalshi Price, Fair, Queue Liquidity</h2>
-            <p>{loading ? "Loading series" : `${priceChartData.length} points · ${trackedDepthLabel}`}</p>
+            <p>{loading ? "Loading series" : `${priceChartData.length} points · ${timeWindowLabel} · ${trackedDepthLabel}`}</p>
           </div>
-          {selectedDepthPrice !== null ? (
-            <button className="text-button" onClick={() => setSelectedDepthPrice(null)}>
-              Track best bid
-            </button>
-          ) : null}
+          <div className="chart-actions">
+            <TimeWindowToggle value={timeWindow} onChange={setTimeWindow} />
+            {selectedDepthPrice !== null ? (
+              <button className="text-button" onClick={() => setSelectedDepthPrice(null)}>
+                Track best bid
+              </button>
+            ) : null}
+          </div>
         </div>
         {priceChartData.length ? (
           <ResponsiveContainer width="100%" height={260}>
@@ -639,14 +666,15 @@ function buildPriceChartData(
       const fair = sideFairPrice(metric ?? null, sideMode);
       const bestBid = sideBestBid(orderbook, sideMode);
       const queuePrice = selectedDepthPrice ?? bestBid;
+      const timestampMs = new Date(orderbook.timestamp).getTime();
       return {
+        timestampMs,
         time: new Date(orderbook.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         bestBid,
         fair,
         queueDepth: depthAtPrice(orderbook, sideMode, queuePrice)
       };
     })
-    .slice(-80);
 }
 
 function buildSharpOddsChartData(odds: SharpBookOdds[]) {
@@ -656,12 +684,13 @@ function buildSharpOddsChartData(odds: SharpBookOdds[]) {
     const item =
       byMinute.get(key) ??
       ({
+        timestampMs: new Date(row.timestamp).getTime(),
         time: new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       } as Record<string, string | number | null>);
     item[row.sportsbook] = Math.round(((row.devigged_probability ?? row.implied_probability) || 0) * 1000) / 10;
     byMinute.set(key, item);
   }
-  return Array.from(byMinute.values()).slice(-120);
+  return Array.from(byMinute.values());
 }
 
 function buildLimitChartData(limits: SharpBookLimit[]) {
@@ -671,12 +700,25 @@ function buildLimitChartData(limits: SharpBookLimit[]) {
     const item =
       byMinute.get(key) ??
       ({
+        timestampMs: new Date(row.timestamp).getTime(),
         time: new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       } as Record<string, string | number | null>);
     item[row.sportsbook] = row.limit_amount;
     byMinute.set(key, item);
   }
-  return Array.from(byMinute.values()).slice(-120);
+  return Array.from(byMinute.values());
+}
+
+function filterTimeWindow<T extends { timestampMs?: number | string | null }>(rows: T[], window: TimeWindow) {
+  const config = timeWindows.find((item) => item.id === window);
+  if (!config || config.minutes === null || rows.length === 0) return rows;
+  const latestTimestamp = rows.reduce((latest, row) => {
+    const value = Number(row.timestampMs);
+    return Number.isFinite(value) ? Math.max(latest, value) : latest;
+  }, 0);
+  if (!latestTimestamp) return rows;
+  const cutoff = latestTimestamp - config.minutes * 60_000;
+  return rows.filter((row) => Number(row.timestampMs) >= cutoff);
 }
 
 function buildDepthLadderData(orderbook: OrderbookSnapshot, sideMode: SideMode) {

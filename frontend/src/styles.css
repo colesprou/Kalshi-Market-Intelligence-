@@ -337,6 +337,37 @@ td span {
   background: #1f7a5b;
 }
 
+.chart-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.time-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.time-toggle button {
+  height: 30px;
+  min-width: 42px;
+  padding: 0 8px;
+  border: 1px solid #c9d4d0;
+  border-radius: 6px;
+  color: #52635e;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.time-toggle button.active {
+  color: #ffffff;
+  border-color: #1f7a5b;
+  background: #1f7a5b;
+}
+
 .text-button {
   height: 32px;
   padding: 0 10px;
@@ -529,6 +560,14 @@ td span {
 
   .filters {
     grid-template-columns: 1fr;
+  }
+
+  .chart-actions {
+    justify-content: flex-start;
+  }
+
+  .time-toggle {
+    flex-wrap: wrap;
   }
 
   .table-wrap {

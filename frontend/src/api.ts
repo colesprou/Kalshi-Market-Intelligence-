@@ -102,10 +102,10 @@ export const api = {
   markets: () => request<Market[]>("/markets?limit=2000"),
   opportunities: (kind?: "stale" | "market-making" | "queue-positioning") =>
     request<Opportunity[]>(kind ? `/opportunities/${kind}` : "/opportunities"),
-  metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=200`),
-  orderbooks: (ticker: string) => request<OrderbookSnapshot[]>(`/markets/${ticker}/orderbooks?limit=200`),
+  metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=1000`),
+  orderbooks: (ticker: string) => request<OrderbookSnapshot[]>(`/markets/${ticker}/orderbooks?limit=1000`),
   sharpOdds: (ticker: string, side: "yes" | "no") =>
-    request<SharpBookOdds[]>(`/markets/${ticker}/sharp-odds?side=${side}&limit=500`),
-  limits: (ticker: string) => request<SharpBookLimit[]>(`/markets/${ticker}/limits?sportsbook=Pinnacle&limit=500`),
+    request<SharpBookOdds[]>(`/markets/${ticker}/sharp-odds?side=${side}&limit=2000`),
+  limits: (ticker: string) => request<SharpBookLimit[]>(`/markets/${ticker}/limits?sportsbook=Pinnacle&limit=2000`),
   scores: (ticker: string) => request<OpportunityScore>(`/scores/${ticker}`)
 };
