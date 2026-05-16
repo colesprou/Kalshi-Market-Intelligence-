@@ -507,6 +507,29 @@ td span {
   font-size: 12px;
 }
 
+.volume-strip {
+  border-top: 1px solid #edf1ef;
+  padding: 10px 14px 12px;
+}
+
+.volume-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.volume-heading strong {
+  font-size: 13px;
+}
+
+.volume-heading span {
+  color: #667872;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .empty {
   display: grid;
   min-height: 130px;

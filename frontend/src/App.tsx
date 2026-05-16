@@ -425,6 +425,7 @@ function MarketDetail({
     selectedDepthPrice === null ? `${sideMode.toUpperCase()} best bid depth` : `${sideMode.toUpperCase()} ${selectedDepthPrice}c depth`;
   const timeWindowLabel = timeWindows.find((window) => window.id === timeWindow)?.label ?? "1h";
   const priceChartData = filterTimeWindow(buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice), timeWindow);
+  const volumeChartData = filterTimeWindow(buildVolumeChartData(orderbooks), timeWindow);
   const sharpChartData = filterTimeWindow(buildSharpOddsChartData(sharpOdds), timeWindow);
   const limitChartData = filterTimeWindow(buildLimitChartData(limits), timeWindow);
   const fairPrice = sideFairPrice(metric, sideMode);
@@ -509,6 +510,34 @@ function MarketDetail({
         ) : (
           <EmptyState title="No time series yet" detail="Orderbook and metric snapshots will chart here after ingestion starts." />
         )}
+        {volumeChartData.length ? (
+          <div className="volume-strip">
+            <div className="volume-heading">
+              <strong>Volume and Contracts/Min</strong>
+              <span>{volumeChartData.length} points</span>
+            </div>
+            <ResponsiveContainer width="100%" height={150}>
+              <ComposedChart data={volumeChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e4ece9" />
+                <XAxis dataKey="time" minTickGap={24} />
+                <YAxis yAxisId="volume" tickFormatter={(value) => compactNumber(Number(value))} />
+                <YAxis yAxisId="cpm" orientation="right" tickFormatter={(value) => formatNumber(Number(value))} />
+                <Tooltip formatter={(value, name) => [formatNumber(Number(value)), name]} />
+                <Bar yAxisId="volume" dataKey="intervalVolume" name="Contracts traded" fill="#c9ddd6" radius={[3, 3, 0, 0]} />
+                <Line
+                  yAxisId="cpm"
+                  type="monotone"
+                  dataKey="contractsPerMinute"
+                  name="Contracts/min"
+                  stroke="#315f85"
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        ) : null}
       </div>
 
       <div className="chart-row">
@@ -675,6 +704,24 @@ function buildPriceChartData(
         queueDepth: depthAtPrice(orderbook, sideMode, queuePrice)
       };
     })
+}
+
+function buildVolumeChartData(orderbooks: OrderbookSnapshot[]) {
+  let previousVolume: number | null = null;
+  return [...orderbooks].reverse().map((orderbook) => {
+    const timestampMs = new Date(orderbook.timestamp).getTime();
+    const volume = orderbook.volume ?? null;
+    const intervalVolume =
+      volume === null || previousVolume === null ? 0 : Math.max(0, volume - previousVolume);
+    previousVolume = volume ?? previousVolume;
+    return {
+      timestampMs,
+      time: new Date(orderbook.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      intervalVolume,
+      cumulativeVolume: volume,
+      contractsPerMinute: orderbook.contracts_per_minute
+    };
+  });
 }
 
 function buildSharpOddsChartData(odds: SharpBookOdds[]) {
