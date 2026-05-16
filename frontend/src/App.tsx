@@ -152,7 +152,7 @@ export function App() {
     return scopedMarkets.filter((market) => {
       const matchesStatus = status === "all" || market.status === status;
       const matchesLeague = leagueFilter === "all" || (market.league ?? "").toLowerCase() === leagueFilter;
-      const matchesMarketType = marketTypeFilter === "all" || (market.market_type ?? "").toLowerCase() === marketTypeFilter;
+      const matchesMarketType = marketTypeFilter === "all" || normalizedMarketType(market.market_type) === marketTypeFilter;
       const text = `${market.ticker} ${market.league ?? ""} ${market.market_type ?? ""} ${
         market.event_title ?? ""
       }`.toLowerCase();
@@ -169,7 +169,7 @@ export function App() {
   }, [scopedMarkets]);
 
   const marketTypes = useMemo(() => {
-    return Array.from(new Set(scopedMarkets.map((market) => market.market_type).filter(Boolean))).sort();
+    return Array.from(new Set(scopedMarkets.map((market) => normalizedMarketType(market.market_type)).filter(Boolean))).sort();
   }, [scopedMarkets]);
 
   const latestMetric = metricsQuery.data?.[0] ?? latestByMarketId.get(selectedMarket?.id ?? -1)?.metric ?? null;
@@ -1075,12 +1075,29 @@ function marketSideLabel(market: Market, sideMode: SideMode) {
 
 function marketTypeLabel(value: string) {
   const labels: Record<string, string> = {
+    moneyline: "Moneyline",
+    run_line: "Run Line",
+    total_runs: "Total Runs",
+    f5_total_runs: "F5 Total Runs",
     KXMLBGAME: "Moneyline",
     KXMLBSPREAD: "Run Line",
     KXMLBTOTAL: "Total Runs",
-    KXMLBF5TOTAL: "F5 Total Runs"
+    KXMLBF5TOTAL: "F5 Total Runs",
+    Moneyline: "Moneyline",
+    "Run Line": "Run Line",
+    "Total Runs": "Total Runs",
+    "1st Half Total Runs": "F5 Total Runs"
   };
   return labels[value] ?? value;
+}
+
+function normalizedMarketType(value: string | null | undefined) {
+  if (!value) return "";
+  if (value === "KXMLBGAME" || value === "Moneyline") return "moneyline";
+  if (value === "KXMLBSPREAD" || value === "Run Line") return "run_line";
+  if (value === "KXMLBTOTAL" || value === "Total Runs") return "total_runs";
+  if (value === "KXMLBF5TOTAL" || value === "1st Half Total Runs") return "f5_total_runs";
+  return value.toLowerCase();
 }
 
 function formatRunLineSelection(selection: string) {

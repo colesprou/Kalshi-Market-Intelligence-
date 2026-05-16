@@ -38,7 +38,7 @@ from app.services.scoring import build_opportunity_score
 logger = logging.getLogger(__name__)
 
 KALSHI_SERIES_PREFIX_BY_LEAGUE = {
-    "mlb": ["KXMLBGAME", "KXMLBSPREAD", "KXMLBTOTAL", "KXMLBF5TOTAL"],
+    "mlb": ["KXMLBGAME"],
     "nba": ["KXNBAGAME"],
     "nfl": ["KXNFLGAME"],
     "nhl": ["KXNHLGAME"],
@@ -48,6 +48,10 @@ KALSHI_SERIES_PREFIX_BY_LEAGUE = {
     "wta": ["KXWTAMATCH"],
     "epl": ["KXEPLGAME"],
     "ucl": ["KXUCLGAME"],
+}
+
+OPTIC_DISCOVERY_MARKETS_BY_LEAGUE = {
+    "mlb": ["Moneyline", "Run Line", "Total Runs", "1st Half Total Runs"],
 }
 
 OPTIC_MARKET_BY_KALSHI_SERIES = {
@@ -202,13 +206,14 @@ async def discover_markets(db: Session) -> int:
 
 def discovery_series_prefixes(league: str, configured_prefixes: list[str]) -> list[str]:
     defaults = KALSHI_SERIES_PREFIX_BY_LEAGUE.get(league, [])
-    return list(dict.fromkeys([*configured_prefixes, *defaults]))
+    allowed = set(defaults)
+    configured = [prefix for prefix in configured_prefixes if prefix in allowed]
+    return list(dict.fromkeys([*configured, *defaults]))
 
 
 def discovery_market_names(league: str) -> list[str]:
-    prefixes = discovery_series_prefixes(league, settings.kalshi_series_prefixes)
     market_names = [*settings.polling_markets]
-    market_names.extend(OPTIC_MARKET_BY_KALSHI_SERIES[prefix] for prefix in prefixes if prefix in OPTIC_MARKET_BY_KALSHI_SERIES)
+    market_names.extend(OPTIC_DISCOVERY_MARKETS_BY_LEAGUE.get(league, []))
     return list(dict.fromkeys(market_names))
 
 

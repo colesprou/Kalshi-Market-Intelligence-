@@ -14,7 +14,7 @@ services:
       - key: CORS_ORIGINS
         value: https://kalshi-research-ui.onrender.com
       - key: KALSHI_SERIES_PREFIXES
-        value: KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL
+        value: KXMLBGAME
       - key: POLLING_LEAGUES
         value: mlb
       - key: POLLING_MARKETS
@@ -47,7 +47,7 @@ services:
       - key: ENVIRONMENT
         value: prod
       - key: KALSHI_SERIES_PREFIXES
-        value: KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL
+        value: KXMLBGAME
       - key: POLLING_LEAGUES
         value: mlb
       - key: POLLING_MARKETS
