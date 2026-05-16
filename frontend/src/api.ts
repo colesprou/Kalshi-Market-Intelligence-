@@ -99,7 +99,7 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  markets: () => request<Market[]>("/markets?limit=500"),
+  markets: () => request<Market[]>("/markets?limit=2000"),
   opportunities: (kind?: "stale" | "market-making" | "queue-positioning") =>
     request<Opportunity[]>(kind ? `/opportunities/${kind}` : "/opportunities"),
   metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=200`),

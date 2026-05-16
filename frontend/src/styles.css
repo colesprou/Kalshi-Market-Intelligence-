@@ -195,15 +195,24 @@ h2 {
   padding: 12px 14px;
 }
 
-.side-toggle {
+.side-toggle,
+.scope-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 6px;
   padding: 0 14px 12px;
   border-bottom: 1px solid #edf1ef;
 }
 
-.side-toggle button {
+.scope-toggle {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.side-toggle {
+  grid-template-columns: 1fr 1fr;
+}
+
+.side-toggle button,
+.scope-toggle button {
   height: 34px;
   border: 1px solid #c9d4d0;
   border-radius: 6px;
@@ -212,7 +221,8 @@ h2 {
   font-weight: 800;
 }
 
-.side-toggle button.active {
+.side-toggle button.active,
+.scope-toggle button.active {
   color: #ffffff;
   border-color: #1f7a5b;
   background: #1f7a5b;
@@ -512,7 +522,8 @@ td span {
   .kpi-strip,
   .metric-grid,
   .queue-panel,
-  .opportunity-grid {
+  .opportunity-grid,
+  .scope-toggle {
     grid-template-columns: 1fr;
   }
 

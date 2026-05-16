@@ -37,7 +37,7 @@ def health() -> HealthRead:
 
 @router.get("/markets", response_model=list[MarketRead])
 def list_markets(
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     status: str | None = None,
     db: Session = Depends(get_db),

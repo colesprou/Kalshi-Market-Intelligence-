@@ -30,6 +30,7 @@ import { api, DerivedMetric, Market, Opportunity, OrderbookSnapshot, SharpBookLi
 
 type OpportunityKind = "all" | "stale" | "market-making" | "queue-positioning";
 type SideMode = "yes" | "no";
+type MarketScope = "upcoming" | "live" | "past" | "all";
 type DepthLadderDatum = {
   price: string;
   priceCents: number;
@@ -43,12 +44,20 @@ const opportunityTabs: { id: OpportunityKind; label: string }[] = [
   { id: "queue-positioning", label: "Queue" }
 ];
 
+const marketScopes: { id: MarketScope; label: string }[] = [
+  { id: "upcoming", label: "Upcoming" },
+  { id: "live", label: "Live" },
+  { id: "past", label: "Past" },
+  { id: "all", label: "All" }
+];
+
 export function App() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState<OpportunityKind>("all");
   const [sideMode, setSideMode] = useState<SideMode>("no");
+  const [marketScope, setMarketScope] = useState<MarketScope>("upcoming");
 
   const marketsQuery = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const opportunitiesQuery = useQuery({
@@ -56,23 +65,23 @@ export function App() {
     queryFn: () => api.opportunities(kind === "all" ? undefined : kind)
   });
 
-  const pregameMarkets = useMemo(() => {
+  const scopedMarkets = useMemo(() => {
     return (marketsQuery.data ?? [])
-      .filter((market) => isPregameMarket(market))
-      .sort((left, right) => compareMarketStartTime(left, right));
-  }, [marketsQuery.data]);
+      .filter((market) => isMarketInScope(market, marketScope))
+      .sort((left, right) => compareMarketStartTime(left, right, marketScope));
+  }, [marketsQuery.data, marketScope]);
 
-  const pregameOpportunities = useMemo(() => {
-    return (opportunitiesQuery.data ?? []).filter((opportunity) => isPregameMarket(opportunity.market));
-  }, [opportunitiesQuery.data]);
+  const scopedOpportunities = useMemo(() => {
+    return (opportunitiesQuery.data ?? []).filter((opportunity) => isMarketInScope(opportunity.market, marketScope));
+  }, [opportunitiesQuery.data, marketScope]);
 
   const selectedMarket = useMemo(() => {
-    if (!pregameMarkets.length) return null;
+    if (!scopedMarkets.length) return null;
     if (selectedTicker) {
-      return pregameMarkets.find((market) => market.ticker === selectedTicker) ?? pregameMarkets[0];
+      return scopedMarkets.find((market) => market.ticker === selectedTicker) ?? scopedMarkets[0];
     }
-    return pregameMarkets[0];
-  }, [pregameMarkets, selectedTicker]);
+    return scopedMarkets[0];
+  }, [scopedMarkets, selectedTicker]);
 
   const metricsQuery = useQuery({
     queryKey: ["metrics", selectedMarket?.ticker],
@@ -97,26 +106,26 @@ export function App() {
 
   const latestByMarketId = useMemo(() => {
     const map = new Map<number, Opportunity>();
-    for (const opportunity of pregameOpportunities) {
+    for (const opportunity of scopedOpportunities) {
       if (!map.has(opportunity.market.id)) map.set(opportunity.market.id, opportunity);
     }
     return map;
-  }, [pregameOpportunities]);
+  }, [scopedOpportunities]);
 
   const filteredMarkets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return pregameMarkets.filter((market) => {
+    return scopedMarkets.filter((market) => {
       const matchesStatus = status === "all" || market.status === status;
       const text = `${market.ticker} ${market.league ?? ""} ${market.market_type ?? ""} ${
         market.event_title ?? ""
       }`.toLowerCase();
       return matchesStatus && (!normalized || text.includes(normalized));
     });
-  }, [pregameMarkets, query, status]);
+  }, [scopedMarkets, query, status]);
 
   const statuses = useMemo(() => {
-    return Array.from(new Set(pregameMarkets.map((market) => market.status).filter(Boolean))).sort();
-  }, [pregameMarkets]);
+    return Array.from(new Set(scopedMarkets.map((market) => market.status).filter(Boolean))).sort();
+  }, [scopedMarkets]);
 
   const latestMetric = metricsQuery.data?.[0] ?? latestByMarketId.get(selectedMarket?.id ?? -1)?.metric ?? null;
   const latestOrderbook = orderbooksQuery.data?.[0] ?? null;
@@ -148,10 +157,10 @@ export function App() {
       </header>
 
       <section className="kpi-strip">
-        <Kpi label="Pregame markets" value={pregameMarkets.length} icon={<Database size={18} />} />
-        <Kpi label="Opportunities" value={pregameOpportunities.length} icon={<Target size={18} />} />
-        <Kpi label="Avg spread" value={formatCents(avgMetric(pregameOpportunities, "spread"))} icon={<Waves size={18} />} />
-        <Kpi label="Avg liquidity" value={formatScore(avgMetric(pregameOpportunities, "liquidity_score"))} icon={<Gauge size={18} />} />
+        <Kpi label={`${marketScopeLabel(marketScope)} markets`} value={scopedMarkets.length} icon={<Database size={18} />} />
+        <Kpi label="Opportunities" value={scopedOpportunities.length} icon={<Target size={18} />} />
+        <Kpi label="Avg spread" value={formatCents(avgMetric(scopedOpportunities, "spread"))} icon={<Waves size={18} />} />
+        <Kpi label="Avg liquidity" value={formatScore(avgMetric(scopedOpportunities, "liquidity_score"))} icon={<Gauge size={18} />} />
       </section>
 
       <section className="workspace">
@@ -176,6 +185,7 @@ export function App() {
               ))}
             </select>
           </div>
+          <ScopeToggle value={marketScope} onChange={setMarketScope} />
           <SideToggle value={sideMode} onChange={setSideMode} />
           <MarketTable
             markets={filteredMarkets}
@@ -190,7 +200,7 @@ export function App() {
         <section className="detail-panel">
           <OpportunityTabs kind={kind} onChange={setKind} />
           <OpportunityList
-            opportunities={pregameOpportunities}
+            opportunities={scopedOpportunities}
             loading={opportunitiesQuery.isLoading}
             selectedTicker={selectedMarket?.ticker ?? null}
             onSelect={setSelectedTicker}
@@ -245,6 +255,18 @@ function SideToggle({ value, onChange }: { value: SideMode; onChange: (value: Si
       <button className={value === "yes" ? "active" : ""} onClick={() => onChange("yes")}>
         YES side
       </button>
+    </div>
+  );
+}
+
+function ScopeToggle({ value, onChange }: { value: MarketScope; onChange: (value: MarketScope) => void }) {
+  return (
+    <div className="scope-toggle" aria-label="Market time scope">
+      {marketScopes.map((scope) => (
+        <button key={scope.id} className={value === scope.id ? "active" : ""} onClick={() => onChange(scope.id)}>
+          {scope.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -765,7 +787,18 @@ function sideEdge(metric: DerivedMetric | null | undefined, sideMode: SideMode) 
   return sideMode === "no" ? metric?.edge_no : metric?.edge_yes;
 }
 
-function isPregameMarket(market: Market) {
+function marketScopeLabel(scope: MarketScope) {
+  return marketScopes.find((item) => item.id === scope)?.label ?? "Visible";
+}
+
+function isMarketInScope(market: Market, scope: MarketScope) {
+  if (scope === "all") return true;
+  if (scope === "upcoming") return isUpcomingMarket(market);
+  if (scope === "live") return isLiveMarket(market);
+  return isPastMarket(market);
+}
+
+function isUpcomingMarket(market: Market) {
   const status = (market.status ?? "").toLowerCase();
   if (["live", "completed", "closed", "settled", "expired", "finalized", "resolved", "inactive"].includes(status)) {
     return false;
@@ -775,10 +808,23 @@ function isPregameMarket(market: Market) {
   return startTime.getTime() > Date.now();
 }
 
-function compareMarketStartTime(left: Market, right: Market) {
+function isLiveMarket(market: Market) {
+  return (market.status ?? "").toLowerCase() === "live";
+}
+
+function isPastMarket(market: Market) {
+  const status = (market.status ?? "").toLowerCase();
+  if (["completed", "closed", "settled", "expired", "finalized", "resolved", "inactive"].includes(status)) return true;
+  const startTime = marketStartTime(market);
+  return Boolean(startTime && startTime.getTime() <= Date.now() && !isLiveMarket(market));
+}
+
+function compareMarketStartTime(left: Market, right: Market, scope: MarketScope = "upcoming") {
   const leftStart = marketStartTime(left)?.getTime() ?? Number.MAX_SAFE_INTEGER;
   const rightStart = marketStartTime(right)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-  if (leftStart !== rightStart) return leftStart - rightStart;
+  if (leftStart !== rightStart) {
+    return scope === "past" ? rightStart - leftStart : leftStart - rightStart;
+  }
   return left.ticker.localeCompare(right.ticker);
 }
 
