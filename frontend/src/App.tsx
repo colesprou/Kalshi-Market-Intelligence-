@@ -41,6 +41,7 @@ type OpportunityKind = "all" | "stale" | "market-making" | "queue-positioning";
 type SideMode = "yes" | "no";
 type MarketScope = "upcoming" | "live" | "past" | "all";
 type TimeWindow = "15m" | "30m" | "1h" | "3h" | "all";
+type MarketSort = "start" | "volume_total" | "volume_30m" | "volume_1h" | "volume_3h";
 type DepthLadderDatum = {
   price: string;
   priceCents: number;
@@ -69,6 +70,14 @@ const timeWindows: { id: TimeWindow; label: string; minutes: number | null }[] =
   { id: "all", label: "All", minutes: null }
 ];
 
+const marketSorts: { id: MarketSort; label: string }[] = [
+  { id: "start", label: "Start time" },
+  { id: "volume_30m", label: "Vol 30m" },
+  { id: "volume_1h", label: "Vol 1h" },
+  { id: "volume_3h", label: "Vol 3h" },
+  { id: "volume_total", label: "Total vol" }
+];
+
 export function App() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -78,6 +87,7 @@ export function App() {
   const [marketScope, setMarketScope] = useState<MarketScope>("upcoming");
   const [leagueFilter, setLeagueFilter] = useState("all");
   const [marketTypeFilter, setMarketTypeFilter] = useState("all");
+  const [marketSort, setMarketSort] = useState<MarketSort>("start");
 
   const marketsQuery = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const opportunitiesQuery = useQuery({
@@ -147,8 +157,8 @@ export function App() {
         market.event_title ?? ""
       }`.toLowerCase();
       return matchesStatus && matchesLeague && matchesMarketType && (!normalized || text.includes(normalized));
-    });
-  }, [scopedMarkets, leagueFilter, marketTypeFilter, query, status]);
+    }).sort((left, right) => compareMarketSort(left, right, marketSort, marketScope));
+  }, [scopedMarkets, leagueFilter, marketTypeFilter, marketScope, marketSort, query, status]);
 
   const statuses = useMemo(() => {
     return Array.from(new Set(scopedMarkets.map((market) => market.status).filter(Boolean))).sort();
@@ -233,6 +243,13 @@ export function App() {
               {marketTypes.map((item) => (
                 <option key={item ?? ""} value={(item ?? "").toLowerCase()}>
                   {marketTypeLabel(item ?? "")}
+                </option>
+              ))}
+            </select>
+            <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)} aria-label="Sort markets">
+              {marketSorts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
                 </option>
               ))}
             </select>
@@ -366,6 +383,7 @@ function MarketTable({
           <tr>
             <th>Game</th>
             <th>Start</th>
+            <th>Vol</th>
             <th>Spread</th>
             <th>Score</th>
           </tr>
@@ -384,6 +402,7 @@ function MarketTable({
                   <span>{marketSideLabel(market, sideMode)} · {market.league ?? "mlb"}</span>
                 </td>
                 <td>{formatStartTime(market)}</td>
+                <td>{formatMarketVolume(market)}</td>
                 <td>{formatCents(opportunity?.metric?.spread)}</td>
                 <td>{formatCents(sideEdge(opportunity?.metric, sideMode))}</td>
               </tr>
@@ -1023,6 +1042,11 @@ function compactNumber(value: number) {
   return `${Math.round(value)}`;
 }
 
+function formatMarketVolume(market: Market) {
+  const value = market.volume_last_30m ?? market.volume_last_1h ?? market.volume_last_3h ?? market.volume_total;
+  return value === null || value === undefined ? "-" : compactNumber(value);
+}
+
 function gameTitle(market: Market) {
   return (market.event_title ?? market.ticker).replace(/\s+Winner\?$/i, "");
 }
@@ -1109,6 +1133,22 @@ function compareMarketStartTime(left: Market, right: Market, scope: MarketScope 
     return scope === "past" ? rightStart - leftStart : leftStart - rightStart;
   }
   return left.ticker.localeCompare(right.ticker);
+}
+
+function compareMarketSort(left: Market, right: Market, sort: MarketSort, scope: MarketScope) {
+  if (sort === "start") return compareMarketStartTime(left, right, scope);
+  const leftValue = marketSortValue(left, sort);
+  const rightValue = marketSortValue(right, sort);
+  if (leftValue !== rightValue) return rightValue - leftValue;
+  return compareMarketStartTime(left, right, scope);
+}
+
+function marketSortValue(market: Market, sort: MarketSort) {
+  if (sort === "volume_30m") return market.volume_last_30m ?? 0;
+  if (sort === "volume_1h") return market.volume_last_1h ?? 0;
+  if (sort === "volume_3h") return market.volume_last_3h ?? 0;
+  if (sort === "volume_total") return market.volume_total ?? 0;
+  return 0;
 }
 
 function marketStartTime(market: Market) {

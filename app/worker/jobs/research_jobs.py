@@ -120,6 +120,7 @@ def discover_markets_job() -> None:
 async def discover_markets(db: Session) -> int:
     repo = MarketRepository(db)
     rows = 0
+    seen_tickers: set[str] = set()
     optic = OpticOddsClient(settings.optic_odds_base_url, settings.oddsjam_api_key)
     now = utcnow()
     start_after = now.isoformat().replace("+00:00", "Z")
@@ -138,40 +139,32 @@ async def discover_markets(db: Session) -> int:
             continue
 
         fixtures = fixture_payload.get("data", fixture_payload if isinstance(fixture_payload, list) else [])
-        for fixture in fixtures:
+        mapping_payloads = await fetch_optic_kalshi_mappings(optic, fixtures, discovery_market_names(league))
+        for fixture, market_name, odds_payload in mapping_payloads:
             fixture_id = str(fixture.get("id"))
-            for market_name in settings.polling_markets:
-                try:
-                    odds_payload = await optic.fixture_odds(
-                        fixture_id=fixture_id,
-                        sportsbooks=["Kalshi"],
-                        market=market_name,
-                        is_main=True,
-                    )
-                except Exception:
-                    logger.exception("Optic Kalshi mapping failed for fixture=%s market=%s", fixture_id, market_name)
+            for odds in _iter_odds(odds_payload):
+                ticker = odds.get("source_ids", {}).get("market_id")
+                if not ticker or ticker in seen_tickers:
                     continue
-                for odds in _iter_odds(odds_payload):
-                    ticker = odds.get("source_ids", {}).get("market_id")
-                    if not ticker:
-                        continue
-                    repo.upsert_market(
-                        ticker=ticker,
-                        sport=(fixture.get("sport") or {}).get("id"),
-                        league=league,
-                        market_type=market_name,
-                        event_title=f"{fixture.get('away_team_display')} @ {fixture.get('home_team_display')}",
-                        event_start_time=parse_dt(fixture.get("start_date")),
-                        status=fixture.get("status"),
-                        optic_fixture_id=fixture_id,
-                        raw_payload={"fixture": fixture, "optic_kalshi_odds": odds},
-                    )
-                    rows += 1
+                seen_tickers.add(ticker)
+                repo.upsert_market(
+                    ticker=ticker,
+                    sport=(fixture.get("sport") or {}).get("id"),
+                    league=league,
+                    market_type=market_name,
+                    event_title=f"{fixture.get('away_team_display')} @ {fixture.get('home_team_display')}",
+                    event_start_time=parse_dt(fixture.get("start_date")),
+                    status=fixture.get("status"),
+                    optic_fixture_id=fixture_id,
+                    raw_payload={"fixture": fixture, "optic_kalshi_odds": odds},
+                )
+                rows += 1
+            db.commit()
 
     kalshi = KalshiClient(settings.kalshi_base_url, settings.kalshi_api_key, settings.kalshi_private_key)
     configured_prefixes = settings.kalshi_series_prefixes
     for league in settings.polling_leagues:
-        prefixes = configured_prefixes or KALSHI_SERIES_PREFIX_BY_LEAGUE.get(league, [])
+        prefixes = discovery_series_prefixes(league, configured_prefixes)
         for prefix in prefixes:
             cursor: str | None = None
             for _ in range(5):
@@ -181,22 +174,102 @@ async def discover_markets(db: Session) -> int:
                     logger.exception("Kalshi series discovery failed for prefix=%s", prefix)
                     break
                 for market in payload.get("markets", []):
+                    ticker = market["ticker"]
+                    if ticker in seen_tickers:
+                        continue
+                    seen_tickers.add(ticker)
+                    fixture_metadata = infer_fixture_metadata(db, ticker)
                     repo.upsert_market(
-                        ticker=market["ticker"],
-                        sport=None,
+                        ticker=ticker,
+                        sport=fixture_metadata.get("sport"),
                         league=league,
                         market_type=prefix,
                         event_title=market.get("subtitle") or market.get("title"),
+                        event_start_time=fixture_metadata.get("event_start_time"),
                         status=market.get("status"),
+                        optic_fixture_id=fixture_metadata.get("optic_fixture_id"),
                         raw_payload=market,
                     )
                     rows += 1
                 cursor = payload.get("cursor")
                 if not cursor:
                     break
+            db.commit()
 
     db.commit()
     return rows
+
+
+def discovery_series_prefixes(league: str, configured_prefixes: list[str]) -> list[str]:
+    defaults = KALSHI_SERIES_PREFIX_BY_LEAGUE.get(league, [])
+    return list(dict.fromkeys([*configured_prefixes, *defaults]))
+
+
+def discovery_market_names(league: str) -> list[str]:
+    prefixes = discovery_series_prefixes(league, settings.kalshi_series_prefixes)
+    market_names = [*settings.polling_markets]
+    market_names.extend(OPTIC_MARKET_BY_KALSHI_SERIES[prefix] for prefix in prefixes if prefix in OPTIC_MARKET_BY_KALSHI_SERIES)
+    return list(dict.fromkeys(market_names))
+
+
+def infer_fixture_metadata(db: Session, ticker: str) -> dict[str, Any]:
+    event_code = kalshi_event_code(ticker)
+    if not event_code:
+        return {}
+    mapped_market = db.scalar(
+        select(Market)
+        .where(
+            Market.ticker.like(f"KXMLBGAME-{event_code}-%"),
+            Market.optic_fixture_id.isnot(None),
+        )
+        .limit(1)
+    )
+    if mapped_market is None:
+        return {}
+    return {
+        "sport": mapped_market.sport,
+        "optic_fixture_id": mapped_market.optic_fixture_id,
+        "event_start_time": mapped_market.event_start_time,
+    }
+
+
+def kalshi_event_code(ticker: str) -> str | None:
+    parts = ticker.split("-")
+    return parts[1] if len(parts) >= 3 else None
+
+
+def should_poll_sharp_market(market: Market) -> bool:
+    if market.market_type in {"Moneyline", "Run Line", "Total Runs", "1st Half Total Runs", "KXMLBGAME"}:
+        return True
+    raw_payload = market.raw_payload or {}
+    return "optic_kalshi_odds" in raw_payload
+
+
+async def fetch_optic_kalshi_mappings(
+    optic: OpticOddsClient,
+    fixtures: list[dict[str, Any]],
+    market_names: list[str],
+) -> list[tuple[dict[str, Any], str, dict[str, Any]]]:
+    semaphore = asyncio.Semaphore(max(1, settings.optic_discovery_concurrency))
+
+    async def fetch_one(fixture: dict[str, Any], market_name: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
+        fixture_id = str(fixture.get("id"))
+        try:
+            async with semaphore:
+                payload = await optic.fixture_odds(
+                    fixture_id=fixture_id,
+                    sportsbooks=["Kalshi"],
+                    market=market_name,
+                    is_main=True,
+                )
+        except Exception:
+            logger.exception("Optic Kalshi mapping failed for fixture=%s market=%s", fixture_id, market_name)
+            return fixture, market_name, None
+        return fixture, market_name, payload
+
+    tasks = [fetch_one(fixture, market_name) for fixture in fixtures for market_name in market_names]
+    results = await asyncio.gather(*tasks)
+    return [(fixture, market_name, payload) for fixture, market_name, payload in results if payload is not None]
 
 
 def pull_kalshi_orderbooks_job() -> None:
@@ -416,7 +489,11 @@ async def pull_sharp_book_odds(db: Session, include_limits: bool) -> int:
     client = OpticOddsClient(settings.optic_odds_base_url, settings.oddsjam_api_key)
     rows = 0
     now = utcnow()
-    markets = [market for market in MarketRepository(db).active_for_polling() if market.optic_fixture_id]
+    markets = [
+        market
+        for market in MarketRepository(db).active_for_polling()
+        if market.optic_fixture_id and should_poll_sharp_market(market)
+    ]
     for market in markets:
         try:
             payload = await client.fixture_odds(

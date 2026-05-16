@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -19,7 +20,7 @@ from app.models import (
     SharpBookLimitsSnapshot,
     SharpBookOddsSnapshot,
 )
-from app.repositories import MarketRepository, SnapshotRepository
+from app.repositories import MarketRepository, SnapshotRepository, utcnow
 from app.schemas import (
     DerivedMetricRead,
     HealthRead,
@@ -43,14 +44,78 @@ def health() -> HealthRead:
     return HealthRead(status="ok")
 
 
+def markets_with_volume_windows(db: Session, markets: list[Market]) -> list[dict[str, object]]:
+    if not markets:
+        return []
+
+    market_ids = [market.id for market in markets]
+    now = utcnow()
+    volume_total = latest_market_volumes(db, market_ids)
+    volume_30m = recent_market_volumes(db, market_ids, now, minutes=30)
+    volume_1h = recent_market_volumes(db, market_ids, now, minutes=60)
+    volume_3h = recent_market_volumes(db, market_ids, now, minutes=180)
+
+    rows: list[dict[str, object]] = []
+    for market in markets:
+        item = MarketRead.model_validate(market).model_dump()
+        item["volume_total"] = volume_total.get(market.id)
+        item["volume_last_30m"] = volume_30m.get(market.id, 0.0)
+        item["volume_last_1h"] = volume_1h.get(market.id, 0.0)
+        item["volume_last_3h"] = volume_3h.get(market.id, 0.0)
+        rows.append(item)
+    return rows
+
+
+def latest_market_volumes(db: Session, market_ids: list[int]) -> dict[int, int]:
+    latest = (
+        select(
+            KalshiOrderbookSnapshot.market_id.label("market_id"),
+            func.max(KalshiOrderbookSnapshot.timestamp).label("timestamp"),
+        )
+        .where(KalshiOrderbookSnapshot.market_id.in_(market_ids))
+        .group_by(KalshiOrderbookSnapshot.market_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(KalshiOrderbookSnapshot.market_id, KalshiOrderbookSnapshot.volume)
+        .join(
+            latest,
+            (KalshiOrderbookSnapshot.market_id == latest.c.market_id)
+            & (KalshiOrderbookSnapshot.timestamp == latest.c.timestamp),
+        )
+        .where(KalshiOrderbookSnapshot.volume.isnot(None))
+    )
+    return {market_id: int(volume) for market_id, volume in rows if volume is not None}
+
+
+def recent_market_volumes(db: Session, market_ids: list[int], now, minutes: int) -> dict[int, float]:
+    since = now - timedelta(minutes=minutes)
+    trade_rows = db.execute(
+        select(KalshiTrade.market_id, func.coalesce(func.sum(KalshiTrade.count), 0.0))
+        .where(KalshiTrade.market_id.in_(market_ids), KalshiTrade.timestamp >= since)
+        .group_by(KalshiTrade.market_id)
+    )
+    volumes = {market_id: float(volume or 0) for market_id, volume in trade_rows}
+
+    feature_rows = db.execute(
+        select(MarketFeatureBucket.market_id, func.coalesce(func.sum(MarketFeatureBucket.volume_delta), 0.0))
+        .where(MarketFeatureBucket.market_id.in_(market_ids), MarketFeatureBucket.bucket_start >= since)
+        .group_by(MarketFeatureBucket.market_id)
+    )
+    for market_id, volume in feature_rows:
+        volumes[market_id] = max(volumes.get(market_id, 0.0), float(volume or 0))
+    return volumes
+
+
 @router.get("/markets", response_model=list[MarketRead])
 def list_markets(
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     status: str | None = None,
     db: Session = Depends(get_db),
-) -> list[Market]:
-    return MarketRepository(db).list(limit=limit, offset=offset, status=status)
+) -> list[dict[str, object]]:
+    markets = MarketRepository(db).list(limit=limit, offset=offset, status=status)
+    return markets_with_volume_windows(db, markets)
 
 
 @router.get("/markets/{ticker}", response_model=MarketRead)

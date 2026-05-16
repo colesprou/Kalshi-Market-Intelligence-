@@ -19,6 +19,10 @@ class MarketRead(BaseModel):
     status: str | None
     created_at: datetime
     updated_at: datetime
+    volume_total: int | None = None
+    volume_last_30m: float | None = None
+    volume_last_1h: float | None = None
+    volume_last_3h: float | None = None
 
 
 class OrderbookSnapshotRead(BaseModel):

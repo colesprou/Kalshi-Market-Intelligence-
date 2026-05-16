@@ -21,6 +21,8 @@ services:
         value: Moneyline,Run Line,Total Runs,1st Half Total Runs
       - key: SHARP_BOOKS
         value: Pinnacle,Circa Sports,BetOnline,Betcris
+      - key: OPTIC_DISCOVERY_CONCURRENCY
+        value: 8
       - key: KALSHI_PRIVATE_DATA_ENABLED
         value: "false"
       - key: FAST_POLL_ENABLED
@@ -52,6 +54,8 @@ services:
         value: Moneyline,Run Line,Total Runs,1st Half Total Runs
       - key: SHARP_BOOKS
         value: Pinnacle,Circa Sports,BetOnline,Betcris
+      - key: OPTIC_DISCOVERY_CONCURRENCY
+        value: 8
       - key: KALSHI_TRADES_INTERVAL_SECONDS
         value: 60
       - key: PRIVATE_FILLS_INTERVAL_SECONDS

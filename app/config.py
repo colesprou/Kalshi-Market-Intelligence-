@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     kalshi_orderbook_interval_seconds: int = Field(default=60, alias="KALSHI_ORDERBOOK_INTERVAL_SECONDS")
     sharp_odds_interval_seconds: int = Field(default=60, alias="SHARP_ODDS_INTERVAL_SECONDS")
     sharp_limits_interval_seconds: int = Field(default=300, alias="SHARP_LIMITS_INTERVAL_SECONDS")
+    optic_discovery_concurrency: int = Field(default=8, alias="OPTIC_DISCOVERY_CONCURRENCY")
     derived_metrics_interval_seconds: int = Field(default=60, alias="DERIVED_METRICS_INTERVAL_SECONDS")
     opportunity_scores_interval_seconds: int = Field(default=60, alias="OPPORTUNITY_SCORES_INTERVAL_SECONDS")
     kalshi_trades_interval_seconds: int = Field(default=60, alias="KALSHI_TRADES_INTERVAL_SECONDS")

@@ -9,6 +9,10 @@ export type Market = {
   status: string | null;
   created_at: string;
   updated_at: string;
+  volume_total: number | null;
+  volume_last_30m: number | null;
+  volume_last_1h: number | null;
+  volume_last_3h: number | null;
 };
 
 export type DerivedMetric = {
