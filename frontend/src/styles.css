@@ -459,14 +459,66 @@ td span {
   min-width: 0;
 }
 
-.metric-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .chart-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.pricing-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d9e2df;
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.pricing-summary,
+.sharp-book-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pricing-summary div,
+.sharp-book-card,
+.sharp-book-empty {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.pricing-summary span,
+.sharp-book-card span {
+  display: block;
+  margin-bottom: 4px;
+  color: #667872;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pricing-summary strong,
+.sharp-book-card strong {
+  display: block;
+  color: #18211f;
+  font-size: 20px;
+}
+
+.pricing-summary .positive strong {
+  color: #1f7a5b;
+}
+
+.sharp-book-card small,
+.sharp-book-empty {
+  color: #667872;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sharp-book-empty {
+  grid-column: 1 / -1;
 }
 
 .queue-panel {
@@ -578,7 +630,8 @@ td span {
   }
 
   .kpi-strip,
-  .metric-grid,
+  .pricing-summary,
+  .sharp-book-grid,
   .queue-panel,
   .opportunity-grid,
   .scope-toggle {

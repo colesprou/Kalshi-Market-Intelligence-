@@ -453,11 +453,13 @@ function MarketDetail({
     selectedDepthPrice === null ? `${sideMode.toUpperCase()} best bid depth` : `${sideMode.toUpperCase()} ${selectedDepthPrice}c depth`;
   const timeWindowLabel = timeWindows.find((window) => window.id === timeWindow)?.label ?? "1h";
   const priceChartData = filterTimeWindow(buildPriceChartData(metrics, orderbooks, sideMode, selectedDepthPrice), timeWindow);
-  const volumeChartData = filterTimeWindow(buildVolumeChartData(orderbooks), timeWindow);
+  const volumeChartData = filterTimeWindow(buildVolumeChartData(metrics, orderbooks, sideMode), timeWindow);
   const sharpChartData = filterTimeWindow(buildSharpOddsChartData(sharpOdds), timeWindow);
   const limitChartData = filterTimeWindow(buildLimitChartData(limits), timeWindow);
   const fairPrice = sideFairPrice(metric, sideMode);
   const edge = sideEdge(metric, sideMode);
+  const bestBid = orderbook ? sideBestBid(orderbook, sideMode) : null;
+  const evAtBestBid = fairPrice !== null && bestBid !== null && bestBid !== undefined ? fairPrice - bestBid : null;
   return (
     <section className="market-detail">
       <div className="detail-header">
@@ -469,14 +471,15 @@ function MarketDetail({
         <span className="status">{market.status ?? "unknown"}</span>
       </div>
 
-      <div className="metric-grid">
-        <Kpi label={`${sideMode.toUpperCase()} fair`} value={formatCents(fairPrice)} icon={<Target size={18} />} />
-        <Kpi label={`Edge ${sideMode}`} value={formatCents(edge)} icon={<Activity size={18} />} />
-        <Kpi label="Spread" value={formatCents(metric?.spread)} icon={<Waves size={18} />} />
-        <Kpi label="Depth" value={orderbook?.total_depth ?? "-"} icon={<BarChart3 size={18} />} />
-        <Kpi label="Volatility" value={formatScore(metric?.volatility_score)} icon={<LineChart size={18} />} />
-        <Kpi label="Sharp rows" value={sharpOdds.length} icon={<ListFilter size={18} />} />
-      </div>
+      <SharpPricingPanel
+        sharpOdds={sharpOdds}
+        sideMode={sideMode}
+        fairPrice={fairPrice}
+        bestBid={bestBid}
+        evAtBestBid={evAtBestBid}
+        spread={metric?.spread}
+        totalDepth={orderbook?.total_depth}
+      />
 
       <NoQueuePanel orderbook={orderbook} />
 
@@ -551,13 +554,30 @@ function MarketDetail({
                 <YAxis yAxisId="volume" tickFormatter={(value) => compactNumber(Number(value))} />
                 <YAxis yAxisId="cpm" orientation="right" tickFormatter={(value) => formatNumber(Number(value))} />
                 <Tooltip formatter={(value, name) => [formatNumber(Number(value)), name]} />
-                <Bar yAxisId="volume" dataKey="intervalVolume" name="Contracts traded" fill="#c9ddd6" radius={[3, 3, 0, 0]} />
+                <Bar yAxisId="volume" dataKey="intervalVolume" name="Contracts traded" radius={[3, 3, 0, 0]}>
+                  {volumeChartData.map((row) => (
+                    <Cell
+                      key={`${row.timestampMs}`}
+                      fill={Number(row.evAtBestBid) > 0 ? "#1f7a5b" : "#c9ddd6"}
+                    />
+                  ))}
+                </Bar>
                 <Line
                   yAxisId="cpm"
                   type="monotone"
                   dataKey="contractsPerMinute"
                   name="Contracts/min"
                   stroke="#315f85"
+                  dot={false}
+                  strokeWidth={2}
+                  connectNulls
+                />
+                <Line
+                  yAxisId="cpm"
+                  type="monotone"
+                  dataKey="evAtBestBid"
+                  name="EV at best bid"
+                  stroke="#854d0e"
                   dot={false}
                   strokeWidth={2}
                   connectNulls
@@ -664,6 +684,65 @@ function DepthLadderChart({
   );
 }
 
+function SharpPricingPanel({
+  sharpOdds,
+  sideMode,
+  fairPrice,
+  bestBid,
+  evAtBestBid,
+  spread,
+  totalDepth
+}: {
+  sharpOdds: SharpBookOdds[];
+  sideMode: SideMode;
+  fairPrice: number | null;
+  bestBid: number | null | undefined;
+  evAtBestBid: number | null;
+  spread: number | null | undefined;
+  totalDepth: number | null | undefined;
+}) {
+  const rows = latestSharpRows(sharpOdds);
+  return (
+    <div className="pricing-panel">
+      <div className="pricing-summary">
+        <div>
+          <span>Consensus {sideMode.toUpperCase()}</span>
+          <strong>{formatCents(fairPrice)}</strong>
+        </div>
+        <div>
+          <span>Kalshi best bid</span>
+          <strong>{formatCents(bestBid)}</strong>
+        </div>
+        <div className={Number(evAtBestBid) > 0 ? "positive" : ""}>
+          <span>EV at best bid</span>
+          <strong>{formatSignedCents(evAtBestBid)}</strong>
+        </div>
+        <div>
+          <span>Spread</span>
+          <strong>{formatCents(spread)}</strong>
+        </div>
+        <div>
+          <span>Total depth</span>
+          <strong>{formatInteger(totalDepth)}</strong>
+        </div>
+      </div>
+      <div className="sharp-book-grid">
+        {rows.length ? (
+          rows.map((row) => (
+            <div key={row.sportsbook} className="sharp-book-card">
+              <span>{row.sportsbook}</span>
+              <strong>{formatCents(probabilityToCents(row.devigged_probability ?? row.implied_probability))}</strong>
+              <small>{formatAmerican(row.american_odds)}</small>
+            </div>
+          ))
+        ) : (
+          <div className="sharp-book-empty">No sharp book rows for {sideMode.toUpperCase()} yet</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NoQueuePanel({ orderbook }: { orderbook: OrderbookSnapshot | null }) {
   const bestNoBid = orderbook?.best_no_bid ?? null;
   const noBook = orderbook?.no_book ?? {};
@@ -734,9 +813,16 @@ function buildPriceChartData(
     })
 }
 
-function buildVolumeChartData(orderbooks: OrderbookSnapshot[]) {
+function buildVolumeChartData(metrics: DerivedMetric[], orderbooks: OrderbookSnapshot[], sideMode: SideMode) {
+  const metricByMinute = new Map<string, DerivedMetric>();
+  for (const metric of metrics) {
+    metricByMinute.set(metric.timestamp.slice(0, 16), metric);
+  }
   let previousVolume: number | null = null;
   return [...orderbooks].reverse().map((orderbook) => {
+    const metric = metricByMinute.get(orderbook.timestamp.slice(0, 16));
+    const fair = sideFairPrice(metric ?? null, sideMode);
+    const bestBid = sideBestBid(orderbook, sideMode);
     const timestampMs = new Date(orderbook.timestamp).getTime();
     const volume = orderbook.volume ?? null;
     const intervalVolume =
@@ -747,7 +833,8 @@ function buildVolumeChartData(orderbooks: OrderbookSnapshot[]) {
       time: new Date(orderbook.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       intervalVolume,
       cumulativeVolume: volume,
-      contractsPerMinute: orderbook.contracts_per_minute
+      contractsPerMinute: orderbook.contracts_per_minute,
+      evAtBestBid: fair !== null && bestBid !== null && bestBid !== undefined ? fair - bestBid : null
     };
   });
 }
@@ -833,6 +920,22 @@ function bestOpportunityScore(opportunity?: Opportunity) {
   );
 }
 
+function latestSharpRows(odds: SharpBookOdds[]) {
+  const latest = new Map<string, SharpBookOdds>();
+  for (const row of odds) {
+    const existing = latest.get(row.sportsbook);
+    if (!existing || new Date(row.timestamp).getTime() > new Date(existing.timestamp).getTime()) {
+      latest.set(row.sportsbook, row);
+    }
+  }
+  return Array.from(latest.values()).sort((left, right) => left.sportsbook.localeCompare(right.sportsbook));
+}
+
+function probabilityToCents(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  return value * 100;
+}
+
 function avgMetric(opportunities: Opportunity[] | undefined, key: keyof DerivedMetric) {
   const values = (opportunities ?? [])
     .map((opportunity) => opportunity.metric?.[key])
@@ -844,6 +947,17 @@ function avgMetric(opportunities: Opportunity[] | undefined, key: keyof DerivedM
 function formatCents(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return `${Math.round(value)}c`;
+}
+
+function formatSignedCents(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  const rounded = Math.round(value);
+  return `${rounded > 0 ? "+" : ""}${rounded}c`;
+}
+
+function formatAmerican(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 function formatScore(value: number | null | undefined) {
