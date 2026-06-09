@@ -208,7 +208,7 @@ export function App() {
               All markets
             </a>
           ) : (
-            <a className="mode-link" href="/itf">
+            <a className="mode-link" href="/?league=itf">
               ITF dashboard
             </a>
           )}
