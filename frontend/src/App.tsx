@@ -43,6 +43,7 @@ type SideMode = "yes" | "no";
 type MarketScope = "upcoming" | "live" | "past" | "all";
 type TimeWindow = "15m" | "30m" | "1h" | "3h" | "all";
 type MarketSort = "start" | "volume_total" | "volume_30m" | "volume_1h" | "volume_3h";
+type DashboardMode = "all" | "itf";
 type DepthLadderDatum = {
   price: string;
   priceCents: number;
@@ -79,16 +80,26 @@ const marketSorts: { id: MarketSort; label: string }[] = [
   { id: "volume_total", label: "Total vol" }
 ];
 
+function detectDashboardMode(): DashboardMode {
+  if (typeof window === "undefined") return "all";
+  const params = new URLSearchParams(window.location.search);
+  const league = params.get("league")?.toLowerCase();
+  const path = window.location.pathname.toLowerCase();
+  return league === "itf" || path.includes("/itf") ? "itf" : "all";
+}
+
 export function App() {
+  const dashboardMode = detectDashboardMode();
+  const lockedLeague = dashboardMode === "itf" ? "itf" : null;
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState<OpportunityKind>("all");
   const [sideMode, setSideMode] = useState<SideMode>("no");
-  const [marketScope, setMarketScope] = useState<MarketScope>("upcoming");
-  const [leagueFilter, setLeagueFilter] = useState("all");
+  const [marketScope, setMarketScope] = useState<MarketScope>(dashboardMode === "itf" ? "all" : "upcoming");
+  const [leagueFilter, setLeagueFilter] = useState(lockedLeague ?? "all");
   const [marketTypeFilter, setMarketTypeFilter] = useState("all");
-  const [marketSort, setMarketSort] = useState<MarketSort>("start");
+  const [marketSort, setMarketSort] = useState<MarketSort>(dashboardMode === "itf" ? "volume_30m" : "start");
 
   const marketsQuery = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const opportunitiesQuery = useQuery({
@@ -98,13 +109,16 @@ export function App() {
 
   const scopedMarkets = useMemo(() => {
     return (marketsQuery.data ?? [])
+      .filter((market) => !lockedLeague || (market.league ?? "").toLowerCase() === lockedLeague)
       .filter((market) => isMarketInScope(market, marketScope))
       .sort((left, right) => compareMarketStartTime(left, right, marketScope));
-  }, [marketsQuery.data, marketScope]);
+  }, [lockedLeague, marketsQuery.data, marketScope]);
 
   const scopedOpportunities = useMemo(() => {
-    return (opportunitiesQuery.data ?? []).filter((opportunity) => isMarketInScope(opportunity.market, marketScope));
-  }, [opportunitiesQuery.data, marketScope]);
+    return (opportunitiesQuery.data ?? [])
+      .filter((opportunity) => !lockedLeague || (opportunity.market.league ?? "").toLowerCase() === lockedLeague)
+      .filter((opportunity) => isMarketInScope(opportunity.market, marketScope));
+  }, [lockedLeague, opportunitiesQuery.data, marketScope]);
 
   const selectedMarket = useMemo(() => {
     if (!scopedMarkets.length) return null;
@@ -185,10 +199,19 @@ export function App() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Kalshi Research</p>
-          <h1>Market Microstructure Console</h1>
+          <p className="eyebrow">{dashboardMode === "itf" ? "Kalshi Research · ITF" : "Kalshi Research"}</p>
+          <h1>{dashboardMode === "itf" ? "ITF Match Winner Console" : "Market Microstructure Console"}</h1>
         </div>
         <div className="top-actions">
+          {dashboardMode === "itf" ? (
+            <a className="mode-link" href="/">
+              All markets
+            </a>
+          ) : (
+            <a className="mode-link" href="/itf">
+              ITF dashboard
+            </a>
+          )}
           <HealthPill />
           <button
             className="icon-button"
@@ -237,14 +260,18 @@ export function App() {
                 </option>
               ))}
             </select>
-            <select value={leagueFilter} onChange={(event) => setLeagueFilter(event.target.value)} aria-label="Filter league">
-              <option value="all">All leagues</option>
-              {leagues.map((item) => (
-                <option key={item ?? ""} value={(item ?? "").toLowerCase()}>
-                  {(item ?? "").toUpperCase()}
-                </option>
-              ))}
-            </select>
+            {lockedLeague ? (
+              <div className="locked-filter">ITF</div>
+            ) : (
+              <select value={leagueFilter} onChange={(event) => setLeagueFilter(event.target.value)} aria-label="Filter league">
+                <option value="all">All leagues</option>
+                {leagues.map((item) => (
+                  <option key={item ?? ""} value={(item ?? "").toLowerCase()}>
+                    {(item ?? "").toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            )}
             <select value={marketTypeFilter} onChange={(event) => setMarketTypeFilter(event.target.value)} aria-label="Filter market type">
               <option value="all">All markets</option>
               {marketTypes.map((item) => (
