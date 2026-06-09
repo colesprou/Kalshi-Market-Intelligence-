@@ -45,6 +45,9 @@ KALSHI_SERIES_PREFIX_BY_LEAGUE = {
     "ncaab": ["KXNCAAMBGAME"],
     "ufc": ["KXUFCFIGHT"],
     "atp": ["KXATPMATCH"],
+    "itf": ["KXITFMATCH"],
+    "itf_men": ["KXITFMATCH"],
+    "itf_women": ["KXITFMATCH"],
     "wta": ["KXWTAMATCH"],
     "epl": ["KXEPLGAME"],
     "ucl": ["KXUCLGAME"],
@@ -52,6 +55,11 @@ KALSHI_SERIES_PREFIX_BY_LEAGUE = {
 
 OPTIC_DISCOVERY_MARKETS_BY_LEAGUE = {
     "mlb": ["Moneyline", "Run Line", "Total Runs", "1st Half Total Runs"],
+    "atp": ["Moneyline"],
+    "itf": ["Moneyline"],
+    "itf_men": ["Moneyline"],
+    "itf_women": ["Moneyline"],
+    "wta": ["Moneyline"],
 }
 
 OPTIC_MARKET_BY_KALSHI_SERIES = {
@@ -59,6 +67,9 @@ OPTIC_MARKET_BY_KALSHI_SERIES = {
     "KXMLBSPREAD": "Run Line",
     "KXMLBTOTAL": "Total Runs",
     "KXMLBF5TOTAL": "1st Half Total Runs",
+    "KXATPMATCH": "Moneyline",
+    "KXITFMATCH": "Moneyline",
+    "KXWTAMATCH": "Moneyline",
 }
 
 MLB_TEAM_SELECTION_HINTS = {
@@ -183,13 +194,15 @@ async def discover_markets(db: Session) -> int:
                         continue
                     seen_tickers.add(ticker)
                     fixture_metadata = infer_fixture_metadata(db, ticker)
+                    fallback_sport = "tennis" if league in {"atp", "itf", "itf_men", "itf_women", "wta"} else None
                     repo.upsert_market(
                         ticker=ticker,
-                        sport=fixture_metadata.get("sport"),
+                        sport=fixture_metadata.get("sport") or fallback_sport,
                         league=league,
                         market_type=prefix,
                         event_title=market.get("subtitle") or market.get("title"),
-                        event_start_time=fixture_metadata.get("event_start_time"),
+                        event_start_time=fixture_metadata.get("event_start_time")
+                        or parse_dt(market.get("occurrence_datetime") or market.get("expected_expiration_time")),
                         status=market.get("status"),
                         optic_fixture_id=fixture_metadata.get("optic_fixture_id"),
                         raw_payload=market,
@@ -212,8 +225,11 @@ def discovery_series_prefixes(league: str, configured_prefixes: list[str]) -> li
 
 
 def discovery_market_names(league: str) -> list[str]:
+    league_defaults = OPTIC_DISCOVERY_MARKETS_BY_LEAGUE.get(league, [])
+    if league_defaults and league != "mlb":
+        return list(dict.fromkeys(league_defaults))
     market_names = [*settings.polling_markets]
-    market_names.extend(OPTIC_DISCOVERY_MARKETS_BY_LEAGUE.get(league, []))
+    market_names.extend(league_defaults)
     return list(dict.fromkeys(market_names))
 
 
@@ -224,7 +240,7 @@ def infer_fixture_metadata(db: Session, ticker: str) -> dict[str, Any]:
     mapped_market = db.scalar(
         select(Market)
         .where(
-            Market.ticker.like(f"KXMLBGAME-{event_code}-%"),
+            Market.ticker.like(f"%{event_code}%"),
             Market.optic_fixture_id.isnot(None),
         )
         .limit(1)
@@ -244,7 +260,16 @@ def kalshi_event_code(ticker: str) -> str | None:
 
 
 def should_poll_sharp_market(market: Market) -> bool:
-    if market.market_type in {"Moneyline", "Run Line", "Total Runs", "1st Half Total Runs", "KXMLBGAME"}:
+    if market.market_type in {
+        "Moneyline",
+        "Run Line",
+        "Total Runs",
+        "1st Half Total Runs",
+        "KXMLBGAME",
+        "KXATPMATCH",
+        "KXITFMATCH",
+        "KXWTAMATCH",
+    }:
         return True
     raw_payload = market.raw_payload or {}
     return "optic_kalshi_odds" in raw_payload
@@ -322,6 +347,7 @@ async def pull_kalshi_orderbooks(db: Session) -> int:
         db.add(snapshot)
         market.status = market_data.get("status") or market.status
         market.event_title = market_data.get("title") or market_data.get("subtitle") or market.event_title
+        market.raw_payload = {**(market.raw_payload or {}), **market_data}
         rows += 1
     db.commit()
     return rows
@@ -395,6 +421,7 @@ async def fast_poll_live_markets(db: Session) -> int:
         rows += 1
         market.status = market_data.get("status") or market.status
         market.event_title = market_data.get("title") or market_data.get("subtitle") or market.event_title
+        market.raw_payload = {**(market.raw_payload or {}), **market_data}
         rows += insert_trade_rows(db, market, trades_payload.get("trades", []))
         rows += build_live_signals(db, market, now=now)
     db.commit()
@@ -711,14 +738,18 @@ def optic_market_name(market_type: str | None) -> str:
 
 
 def target_team_from_market(market: Market) -> str | None:
-    if market.market_type not in {"Moneyline", "KXMLBGAME"}:
+    if market.market_type not in {"Moneyline", "KXMLBGAME", "KXATPMATCH", "KXITFMATCH", "KXWTAMATCH"}:
         return None
+    raw_payload = market.raw_payload or {}
+    optic_odds = raw_payload.get("optic_kalshi_odds") or {}
+    for value in (optic_odds.get("selection"), optic_odds.get("name"), raw_payload.get("yes_sub_title")):
+        if value:
+            return str(value)
     suffix = market.ticker.rsplit("-", 1)[-1]
     hints = MLB_TEAM_SELECTION_HINTS.get(suffix)
     if hints:
         return "|".join(hints)
-    raw_yes = (market.raw_payload or {}).get("yes_sub_title")
-    return str(raw_yes) if raw_yes else suffix
+    return suffix
 
 
 def selection_matches_team(selection: str, target_team: str) -> bool:

@@ -29,6 +29,7 @@ from app.schemas import (
     MarketRead,
     MarketEventDetectionRead,
     MarketFeatureBucketRead,
+    MarketVolumeSummaryRead,
     OpportunityRead,
     OpportunityScoreRead,
     OrderbookSnapshotRead,
@@ -62,6 +63,8 @@ def markets_with_volume_windows(db: Session, markets: list[Market]) -> list[dict
         item["volume_last_30m"] = volume_30m.get(market.id, 0.0)
         item["volume_last_1h"] = volume_1h.get(market.id, 0.0)
         item["volume_last_3h"] = volume_3h.get(market.id, 0.0)
+        item["yes_label"] = side_label_from_market(market, "yes")
+        item["no_label"] = side_label_from_market(market, "no")
         rows.append(item)
     return rows
 
@@ -107,6 +110,46 @@ def recent_market_volumes(db: Session, market_ids: list[int], now, minutes: int)
     return volumes
 
 
+def side_trade_volume(
+    db: Session,
+    market: Market,
+    side: str,
+    start,
+    end,
+) -> float:
+    stmt = select(func.coalesce(func.sum(KalshiTrade.count), 0.0)).where(
+        KalshiTrade.market_id == market.id,
+        func.lower(KalshiTrade.taker_side) == side,
+    )
+    if start is not None:
+        stmt = stmt.where(KalshiTrade.timestamp >= start)
+    if end is not None:
+        stmt = stmt.where(KalshiTrade.timestamp <= end)
+    return float(db.scalar(stmt) or 0.0)
+
+
+def side_label_from_market(market: Market, side: str) -> str | None:
+    raw_payload = market.raw_payload or {}
+    side = side.lower()
+    candidates = (
+        ("yes_sub_title", "yes_title", "yes_label", "yes"),
+        ("no_sub_title", "no_title", "no_label", "no"),
+    )
+    keys = candidates[0] if side == "yes" else candidates[1]
+    for key in keys:
+        value = raw_payload.get(key)
+        if value:
+            return str(value)
+    optic_odds = raw_payload.get("optic_kalshi_odds") or {}
+    if side == "yes":
+        value = optic_odds.get("selection") or optic_odds.get("name")
+        if value:
+            return str(value)
+    if (market.market_type or "").upper() in {"KXITFMATCH", "KXATPMATCH", "KXWTAMATCH"}:
+        return side.upper()
+    return None
+
+
 @router.get("/markets", response_model=list[MarketRead])
 def list_markets(
     limit: int = Query(default=500, ge=1, le=2000),
@@ -119,11 +162,46 @@ def list_markets(
 
 
 @router.get("/markets/{ticker}", response_model=MarketRead)
-def get_market(ticker: str, db: Session = Depends(get_db)) -> Market:
+def get_market(ticker: str, db: Session = Depends(get_db)) -> dict[str, object]:
     market = MarketRepository(db).by_ticker(ticker)
     if market is None:
         raise HTTPException(status_code=404, detail="Market not found")
-    return market
+    item = MarketRead.model_validate(market).model_dump()
+    item["volume_total"] = latest_market_volumes(db, [market.id]).get(market.id)
+    item["volume_last_30m"] = recent_market_volumes(db, [market.id], utcnow(), minutes=30).get(market.id, 0.0)
+    item["volume_last_1h"] = recent_market_volumes(db, [market.id], utcnow(), minutes=60).get(market.id, 0.0)
+    item["volume_last_3h"] = recent_market_volumes(db, [market.id], utcnow(), minutes=180).get(market.id, 0.0)
+    item["yes_label"] = side_label_from_market(market, "yes")
+    item["no_label"] = side_label_from_market(market, "no")
+    return item
+
+
+@router.get("/markets/{ticker}/volume-summary", response_model=list[MarketVolumeSummaryRead])
+def get_market_volume_summary(ticker: str, db: Session = Depends(get_db)) -> list[MarketVolumeSummaryRead]:
+    market = MarketRepository(db).by_ticker(ticker)
+    if market is None:
+        raise HTTPException(status_code=404, detail="Market not found")
+    now = utcnow()
+    latest_volume = latest_market_volumes(db, [market.id]).get(market.id)
+    latest_trade_at = db.scalar(
+        select(func.max(KalshiTrade.timestamp)).where(KalshiTrade.market_id == market.id)
+    )
+    rows = []
+    for side in ("yes", "no"):
+        rows.append(
+            MarketVolumeSummaryRead(
+                ticker=market.ticker,
+                side=side,
+                label=side_label_from_market(market, side),
+                volume_total=latest_volume,
+                contracts_30m=side_trade_volume(db, market, side, now - timedelta(minutes=30), now),
+                contracts_1h=side_trade_volume(db, market, side, now - timedelta(hours=1), now),
+                contracts_3h=side_trade_volume(db, market, side, now - timedelta(hours=3), now),
+                contracts_pregame=side_trade_volume(db, market, side, None, market.event_start_time),
+                latest_trade_at=latest_trade_at,
+            )
+        )
+    return rows
 
 
 @router.get("/markets/{ticker}/metrics", response_model=list[DerivedMetricRead])

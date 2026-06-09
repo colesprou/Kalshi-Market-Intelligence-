@@ -58,8 +58,8 @@ DATABASE_URL=sqlite:///./local.db
 KALSHI_API_KEY=
 KALSHI_PRIVATE_KEY=
 ODDSJAM_API_KEY=
-KALSHI_SERIES_PREFIXES=KXMLBGAME
-POLLING_LEAGUES=mlb
+KALSHI_SERIES_PREFIXES=KXMLBGAME,KXMLBSPREAD,KXMLBTOTAL,KXMLBF5TOTAL,KXITFMATCH
+POLLING_LEAGUES=mlb,itf
 POLLING_MARKETS=Moneyline,Run Line,Total Runs,1st Half Total Runs
 SHARP_BOOKS=Pinnacle,Circa,BetOnline
 CORS_ORIGINS=http://localhost:5173
@@ -171,11 +171,14 @@ python scripts/backfill_market_feature_buckets.py --truncate
 ## Current Scope And Assumptions
 
 - The default research configuration focuses on main MLB moneyline, run line,
-  game total, and first-five total markets.
+  game total, first-five total markets, and ITF tennis match winners.
 - MLB Kalshi series defaults are `KXMLBGAME`, `KXMLBSPREAD`, `KXMLBTOTAL`,
   and `KXMLBF5TOTAL`.
 - MLB Optic Odds market defaults are `Moneyline`, `Run Line`, `Total Runs`,
   and `1st Half Total Runs` with `is_main=true`.
+- ITF Kalshi match winners use the `KXITFMATCH` series. Each ticker is a
+  single YES/NO match market, so research views show both side labels and
+  side trade flow when Kalshi trade tape exposes `taker_side`.
 - Kalshi YES and NO markets are separate binary markets with separate orderbooks.
 - Kalshi exposes bids on each side; asks are derived from the opposite side bid
   where applicable.

@@ -13,6 +13,8 @@ export type Market = {
   volume_last_30m: number | null;
   volume_last_1h: number | null;
   volume_last_3h: number | null;
+  yes_label: string | null;
+  no_label: string | null;
 };
 
 export type DerivedMetric = {
@@ -168,6 +170,18 @@ export type LiveMarketSignal = {
   metadata_json: Record<string, unknown> | null;
 };
 
+export type MarketVolumeSummary = {
+  ticker: string;
+  side: "yes" | "no";
+  label: string | null;
+  volume_total: number | null;
+  contracts_30m: number;
+  contracts_1h: number;
+  contracts_3h: number;
+  contracts_pregame: number;
+  latest_trade_at: string | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string): Promise<T> {
@@ -184,6 +198,7 @@ export const api = {
     request<Opportunity[]>(kind ? `/opportunities/${kind}` : "/opportunities"),
   metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=1000`),
   orderbooks: (ticker: string) => request<OrderbookSnapshot[]>(`/markets/${ticker}/orderbooks?limit=1000`),
+  volumeSummary: (ticker: string) => request<MarketVolumeSummary[]>(`/markets/${ticker}/volume-summary`),
   features: (ticker: string) => request<MarketFeatureBucket[]>(`/markets/${ticker}/features?bucket_seconds=60&limit=2000`),
   events: (ticker: string) => request<MarketEventDetection[]>(`/markets/${ticker}/events?limit=500`),
   liveSignals: (ticker: string) => request<LiveMarketSignal[]>(`/markets/${ticker}/live-signals?limit=500`),

@@ -521,6 +521,74 @@ td span {
   grid-column: 1 / -1;
 }
 
+.side-volume-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d9e2df;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.side-volume-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.side-volume-heading strong {
+  font-size: 14px;
+}
+
+.side-volume-heading span {
+  color: #667872;
+  font-size: 12px;
+}
+
+.side-volume-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.side-volume-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: #fbfcfb;
+}
+
+.side-volume-card span,
+.side-volume-card dt {
+  color: #667872;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.side-volume-card strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-volume-card dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.side-volume-card dd {
+  margin: 2px 0 0;
+  font-weight: 800;
+}
+
 .queue-panel {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -632,6 +700,7 @@ td span {
   .kpi-strip,
   .pricing-summary,
   .sharp-book-grid,
+  .side-volume-grid,
   .queue-panel,
   .opportunity-grid,
   .scope-toggle {

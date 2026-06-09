@@ -31,6 +31,7 @@ import {
   DerivedMetric,
   Market,
   MarketFeatureBucket,
+  MarketVolumeSummary,
   Opportunity,
   OrderbookSnapshot,
   SharpBookLimit,
@@ -123,6 +124,11 @@ export function App() {
     queryFn: () => api.orderbooks(selectedMarket!.ticker),
     enabled: Boolean(selectedMarket)
   });
+  const volumeSummaryQuery = useQuery({
+    queryKey: ["volume-summary", selectedMarket?.ticker],
+    queryFn: () => api.volumeSummary(selectedMarket!.ticker),
+    enabled: Boolean(selectedMarket)
+  });
   const featuresQuery = useQuery({
     queryKey: ["features", selectedMarket?.ticker],
     queryFn: () => api.features(selectedMarket!.ticker),
@@ -192,6 +198,7 @@ export function App() {
               void opportunitiesQuery.refetch();
               void metricsQuery.refetch();
               void orderbooksQuery.refetch();
+              void volumeSummaryQuery.refetch();
               void featuresQuery.refetch();
               void sharpOddsQuery.refetch();
               void limitsQuery.refetch();
@@ -278,6 +285,7 @@ export function App() {
             market={selectedMarket}
             metric={latestMetric}
             orderbook={latestOrderbook}
+            volumeSummary={volumeSummaryQuery.data ?? []}
             metrics={metricsQuery.data ?? []}
             orderbooks={orderbooksQuery.data ?? []}
             features={featuresQuery.data ?? []}
@@ -287,6 +295,7 @@ export function App() {
             loading={
               metricsQuery.isLoading ||
               orderbooksQuery.isLoading ||
+              volumeSummaryQuery.isLoading ||
               featuresQuery.isLoading ||
               sharpOddsQuery.isLoading ||
               limitsQuery.isLoading
@@ -463,6 +472,7 @@ function MarketDetail({
   market,
   metric,
   orderbook,
+  volumeSummary,
   metrics,
   orderbooks,
   features,
@@ -474,6 +484,7 @@ function MarketDetail({
   market: Market | null;
   metric: DerivedMetric | null;
   orderbook: OrderbookSnapshot | null;
+  volumeSummary: MarketVolumeSummary[];
   metrics: DerivedMetric[];
   orderbooks: OrderbookSnapshot[];
   features: MarketFeatureBucket[];
@@ -526,6 +537,8 @@ function MarketDetail({
         spread={metric?.spread}
         totalDepth={orderbook?.total_depth}
       />
+
+      <SideVolumePanel market={market} volumeSummary={volumeSummary} />
 
       <NoQueuePanel orderbook={orderbook} />
 
@@ -824,6 +837,58 @@ function NoQueuePanel({ orderbook }: { orderbook: OrderbookSnapshot | null }) {
   );
 }
 
+function SideVolumePanel({ market, volumeSummary }: { market: Market; volumeSummary: MarketVolumeSummary[] }) {
+  const rows = ["yes", "no"].map((side) => {
+    const row = volumeSummary.find((item) => item.side === side);
+    return {
+      side,
+      label: row?.label ?? sideLabelFromMarket(market, side as SideMode),
+      total: row?.volume_total ?? market.volume_total,
+      pregame: row?.contracts_pregame ?? 0,
+      last30m: row?.contracts_30m ?? 0,
+      last1h: row?.contracts_1h ?? 0,
+      last3h: row?.contracts_3h ?? 0
+    };
+  });
+
+  return (
+    <div className="side-volume-panel">
+      <div className="side-volume-heading">
+        <strong>Pregame and Recent Flow</strong>
+        <span>Ticker volume is total market volume; side rows use Kalshi trade tape when available.</span>
+      </div>
+      <div className="side-volume-grid">
+        {rows.map((row) => (
+          <div key={row.side} className="side-volume-card">
+            <div>
+              <span>{row.side.toUpperCase()}</span>
+              <strong>{row.label}</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Pregame</dt>
+                <dd>{formatInteger(row.pregame)}</dd>
+              </div>
+              <div>
+                <dt>30m</dt>
+                <dd>{formatInteger(row.last30m)}</dd>
+              </div>
+              <div>
+                <dt>1h</dt>
+                <dd>{formatInteger(row.last1h)}</dd>
+              </div>
+              <div>
+                <dt>Total ticker</dt>
+                <dd>{formatInteger(row.total)}</dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="empty">
@@ -1062,6 +1127,7 @@ function marketSelection(market: Market) {
 }
 
 function marketSideLabel(market: Market, sideMode: SideMode) {
+  const explicitLabel = sideLabelFromMarket(market, sideMode);
   const marketType = market.market_type ?? "";
   const selection = marketSelection(market);
   if (marketType.includes("TOTAL") || marketType === "Total Runs" || marketType === "1st Half Total Runs") {
@@ -1070,7 +1136,24 @@ function marketSideLabel(market: Market, sideMode: SideMode) {
   if (marketType.includes("SPREAD") || marketType === "Run Line") {
     return `${sideMode.toUpperCase()} ${formatRunLineSelection(selection)}`;
   }
+  if (isTennisMatchMarket(market)) {
+    return explicitLabel ? `${sideMode.toUpperCase()} ${explicitLabel}` : `${sideMode.toUpperCase()} side`;
+  }
+  if (explicitLabel) return `${sideMode.toUpperCase()} ${explicitLabel}`;
   return `${sideMode.toUpperCase()} ${selection}`;
+}
+
+function sideLabelFromMarket(market: Market, sideMode: SideMode) {
+  return sideMode === "yes" ? market.yes_label : market.no_label;
+}
+
+function isTennisMatchMarket(market: Market) {
+  const value = market.market_type ?? "";
+  const league = (market.league ?? "").toLowerCase();
+  return (
+    ["KXATPMATCH", "KXITFMATCH", "KXWTAMATCH"].includes(value) ||
+    ["atp", "itf", "itf_men", "itf_women", "wta"].includes(league)
+  );
 }
 
 function marketTypeLabel(value: string) {
@@ -1083,6 +1166,9 @@ function marketTypeLabel(value: string) {
     KXMLBSPREAD: "Run Line",
     KXMLBTOTAL: "Total Runs",
     KXMLBF5TOTAL: "F5 Total Runs",
+    KXATPMATCH: "Moneyline",
+    KXITFMATCH: "Moneyline",
+    KXWTAMATCH: "Moneyline",
     Moneyline: "Moneyline",
     "Run Line": "Run Line",
     "Total Runs": "Total Runs",
@@ -1094,6 +1180,7 @@ function marketTypeLabel(value: string) {
 function normalizedMarketType(value: string | null | undefined) {
   if (!value) return "";
   if (value === "KXMLBGAME" || value === "Moneyline") return "moneyline";
+  if (value === "KXATPMATCH" || value === "KXITFMATCH" || value === "KXWTAMATCH") return "moneyline";
   if (value === "KXMLBSPREAD" || value === "Run Line") return "run_line";
   if (value === "KXMLBTOTAL" || value === "Total Runs") return "total_runs";
   if (value === "KXMLBF5TOTAL" || value === "1st Half Total Runs") return "f5_total_runs";

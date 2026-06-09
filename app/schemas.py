@@ -23,6 +23,20 @@ class MarketRead(BaseModel):
     volume_last_30m: float | None = None
     volume_last_1h: float | None = None
     volume_last_3h: float | None = None
+    yes_label: str | None = None
+    no_label: str | None = None
+
+
+class MarketVolumeSummaryRead(BaseModel):
+    ticker: str
+    side: str
+    label: str | None
+    volume_total: int | None
+    contracts_30m: float
+    contracts_1h: float
+    contracts_3h: float
+    contracts_pregame: float
+    latest_trade_at: datetime | None
 
 
 class OrderbookSnapshotRead(BaseModel):
