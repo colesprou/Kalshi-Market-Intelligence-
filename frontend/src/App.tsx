@@ -101,7 +101,10 @@ export function App() {
   const [marketTypeFilter, setMarketTypeFilter] = useState("all");
   const [marketSort, setMarketSort] = useState<MarketSort>(dashboardMode === "itf" ? "volume_30m" : "start");
 
-  const marketsQuery = useQuery({ queryKey: ["markets"], queryFn: api.markets });
+  const marketsQuery = useQuery({
+    queryKey: ["markets", lockedLeague],
+    queryFn: () => api.markets({ league: lockedLeague, limit: lockedLeague ? 500 : 500 })
+  });
   const opportunitiesQuery = useQuery({
     queryKey: ["opportunities", kind],
     queryFn: () => api.opportunities(kind === "all" ? undefined : kind)

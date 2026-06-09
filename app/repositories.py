@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -26,10 +26,21 @@ class MarketRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list(self, limit: int = 100, offset: int = 0, status: str | None = None) -> list[Market]:
+    def list(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        league: str | None = None,
+        market_type: str | None = None,
+    ) -> list[Market]:
         stmt = select(Market).order_by(Market.event_start_time, Market.ticker).limit(limit).offset(offset)
         if status:
             stmt = stmt.where(Market.status == status)
+        if league:
+            stmt = stmt.where(func.lower(Market.league) == league.lower())
+        if market_type:
+            stmt = stmt.where(Market.market_type == market_type)
         return list(self.db.scalars(stmt))
 
     def by_ticker(self, ticker: str) -> Market | None:

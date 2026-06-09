@@ -193,7 +193,12 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  markets: () => request<Market[]>("/markets?limit=2000"),
+  markets: (params: { league?: string | null; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    query.set("limit", String(params.limit ?? 500));
+    if (params.league) query.set("league", params.league);
+    return request<Market[]>(`/markets?${query.toString()}`);
+  },
   opportunities: (kind?: "stale" | "market-making" | "queue-positioning") =>
     request<Opportunity[]>(kind ? `/opportunities/${kind}` : "/opportunities"),
   metrics: (ticker: string) => request<DerivedMetric[]>(`/markets/${ticker}/metrics?limit=1000`),

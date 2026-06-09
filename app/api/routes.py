@@ -155,9 +155,17 @@ def list_markets(
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     status: str | None = None,
+    league: str | None = Query(default=None),
+    market_type: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
-    markets = MarketRepository(db).list(limit=limit, offset=offset, status=status)
+    markets = MarketRepository(db).list(
+        limit=limit,
+        offset=offset,
+        status=status,
+        league=league,
+        market_type=market_type,
+    )
     return markets_with_volume_windows(db, markets)
 
 
