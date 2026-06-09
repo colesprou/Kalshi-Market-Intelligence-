@@ -383,6 +383,7 @@ async def fast_poll_live_markets(db: Session) -> int:
     markets = MarketRepository(db).fast_poll_candidates(
         limit=settings.fast_poll_market_limit,
         window_minutes=settings.fast_poll_window_minutes,
+        activity_window_seconds=settings.fast_poll_activity_window_seconds,
     )
     for market in markets:
         now = utcnow()

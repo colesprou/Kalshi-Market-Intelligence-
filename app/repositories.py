@@ -10,6 +10,7 @@ from app.models import (
     DerivedMarketMetric,
     JobRun,
     KalshiOrderbookSnapshot,
+    KalshiTrade,
     Market,
     OpportunityScore,
     SharpBookLimitsSnapshot,
@@ -69,27 +70,96 @@ class MarketRepository:
         )
         return list(self.db.scalars(stmt))
 
-    def fast_poll_candidates(self, limit: int, window_minutes: int) -> list[Market]:
+    def fast_poll_candidates(self, limit: int, window_minutes: int, activity_window_seconds: int = 300) -> list[Market]:
         now = utcnow()
         window_start = now - timedelta(minutes=window_minutes)
         window_end = now + timedelta(minutes=window_minutes)
+        activity_start = now - timedelta(seconds=activity_window_seconds)
         stmt = (
             select(Market)
-            .where(
-                Market.status.in_(["open", "active", "unplayed", "live"]),
-                (
-                    (Market.status == "live")
-                    | (
-                        Market.event_start_time.isnot(None)
-                        & (Market.event_start_time >= window_start)
-                        & (Market.event_start_time <= window_end)
-                    )
-                ),
-            )
-            .order_by((Market.status == "live").desc(), Market.event_start_time.nulls_last(), Market.ticker)
-            .limit(limit)
+            .where(Market.status.in_(["open", "active", "unplayed", "live"]))
+            .order_by(Market.event_start_time.nulls_last(), Market.ticker)
+            .limit(max(limit * 8, 100))
         )
-        return list(self.db.scalars(stmt))
+        candidates = list(self.db.scalars(stmt))
+        ranked: list[tuple[float, Market]] = []
+        for market in candidates:
+            score = self._fast_poll_activity_score(
+                market=market,
+                now=now,
+                window_start=window_start,
+                window_end=window_end,
+                activity_start=activity_start,
+            )
+            if score > 0:
+                ranked.append((score, market))
+        ranked.sort(key=lambda item: (-item[0], item[1].event_start_time or datetime.max.replace(tzinfo=timezone.utc), item[1].ticker))
+        return [market for _, market in ranked[:limit]]
+
+    def _fast_poll_activity_score(
+        self,
+        market: Market,
+        now: datetime,
+        window_start: datetime,
+        window_end: datetime,
+        activity_start: datetime,
+    ) -> float:
+        status = (market.status or "").lower()
+        score = 0.0
+        if status == "live":
+            score += 1000
+        elif status == "active":
+            score += 50
+
+        recent_trade_count = self.db.scalar(
+            select(KalshiTrade.count)
+            .where(KalshiTrade.market_id == market.id, KalshiTrade.timestamp >= activity_start)
+            .limit(1)
+        )
+        if recent_trade_count is not None:
+            score += 500
+
+        recent_orderbooks = list(
+            self.db.scalars(
+                select(KalshiOrderbookSnapshot)
+                .where(
+                    KalshiOrderbookSnapshot.market_id == market.id,
+                    KalshiOrderbookSnapshot.timestamp >= activity_start,
+                )
+                .order_by(desc(KalshiOrderbookSnapshot.timestamp))
+                .limit(2)
+            )
+        )
+        if len(recent_orderbooks) >= 2:
+            latest, previous = recent_orderbooks[0], recent_orderbooks[1]
+            if latest.volume is not None and previous.volume is not None and latest.volume > previous.volume:
+                score += 400 + min(100, latest.volume - previous.volume)
+            if quote_changed(latest, previous):
+                score += 250
+            if latest.total_depth != previous.total_depth:
+                score += 150
+        elif len(recent_orderbooks) == 1 and status in {"live", "active"}:
+            score += 25
+
+        if market.event_start_time is not None and window_start <= ensure_aware(market.event_start_time) <= window_end:
+            score += 20
+        return score
+
+
+def quote_changed(latest: KalshiOrderbookSnapshot, previous: KalshiOrderbookSnapshot) -> bool:
+    return (
+        latest.best_yes_bid != previous.best_yes_bid
+        or latest.best_yes_ask != previous.best_yes_ask
+        or latest.best_no_bid != previous.best_no_bid
+        or latest.best_no_ask != previous.best_no_ask
+        or latest.spread != previous.spread
+    )
+
+
+def ensure_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 class SnapshotRepository:

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     fast_poll_interval_seconds: int = Field(default=5, alias="FAST_POLL_INTERVAL_SECONDS")
     fast_poll_market_limit: int = Field(default=20, alias="FAST_POLL_MARKET_LIMIT")
     fast_poll_window_minutes: int = Field(default=15, alias="FAST_POLL_WINDOW_MINUTES")
+    fast_poll_activity_window_seconds: int = Field(default=300, alias="FAST_POLL_ACTIVITY_WINDOW_SECONDS")
 
     polling_leagues_csv: str = Field(default="mlb,itf", alias="POLLING_LEAGUES")
     polling_markets_csv: str = Field(default="Moneyline,Run Line,Total Runs,1st Half Total Runs", alias="POLLING_MARKETS")

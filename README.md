@@ -69,6 +69,7 @@ FAST_POLL_ENABLED=false
 FAST_POLL_INTERVAL_SECONDS=5
 FAST_POLL_MARKET_LIMIT=20
 FAST_POLL_WINDOW_MINUTES=15
+FAST_POLL_ACTIVITY_WINDOW_SECONDS=300
 FEATURE_BUCKET_LOOKBACK_MINUTES=3
 ```
 
@@ -179,6 +180,10 @@ python scripts/backfill_market_feature_buckets.py --truncate
 - ITF Kalshi match winners use the `KXITFMATCH` series. Each ticker is a
   single YES/NO match market, so research views show both side labels and
   side trade flow when Kalshi trade tape exposes `taker_side`.
+- Fast live polling prioritizes explicit live status and recent market activity
+  heartbeats such as trades, volume changes, quote changes, and depth changes.
+  Start time is only a fallback priority signal, which is important for rolling
+  tennis schedules.
 - Kalshi YES and NO markets are separate binary markets with separate orderbooks.
 - Kalshi exposes bids on each side; asks are derived from the opposite side bid
   where applicable.
